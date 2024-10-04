@@ -49,7 +49,7 @@ void set_signal_handler(void (*handler) (int)) {
 
 void stop_signal_handler(int signal_identifier) {
     (void)signal_identifier;
-    set_signal_handler(SIG_DFL);
+    set_signal_handler(SIG_IGN);
     pthread_mutex_lock(&should_stop_mutex);
     should_stop = 1;
     pthread_mutex_unlock(&should_stop_mutex);
