@@ -9,6 +9,7 @@ COPY Makefile dum.c .
 
 RUN make dum
 
+
 FROM scratch
 COPY --from=build /app/dum .
 CMD ["./dum"]
