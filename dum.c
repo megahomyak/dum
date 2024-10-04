@@ -22,9 +22,9 @@ void* worker_thread(void* context_void_pointer) {
         int client_descriptor;
         for (;;) {
             pthread_mutex_lock(&should_stop_mutex);
-            int should_stop_saved = should_stop;
+            int should_stop_ = should_stop;
             pthread_mutex_unlock(&should_stop_mutex);
-            if (should_stop_saved) {
+            if (should_stop_) {
                 goto stop_worker;
             }
             if ((client_descriptor = context_pointer->client_descriptor) != -1) {
@@ -35,7 +35,7 @@ void* worker_thread(void* context_void_pointer) {
         respond:
         pthread_mutex_unlock(&context_pointer->client_descriptor_mutex);
 
-        // Send the file here
+        /* Send the file here */
 
         pthread_mutex_lock(&context_pointer->client_descriptor_mutex);
     }
