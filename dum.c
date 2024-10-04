@@ -51,6 +51,8 @@ int main(void) {
     pthread_mutex_init(&current_job_guard, mutex_attributes);
     pthread_cond_init(&current_job_changed, condition_attributes);
 
+    set_signal_handler(stop_signal_handler);
+
     pthread_t threads[HANDLER_THREAD_COUNT];
 
     pthread_attr_t thread_attributes;
