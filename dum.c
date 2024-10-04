@@ -63,8 +63,8 @@ int main(void) {
     }
 
     for (int i = 0; i < HANDLER_THREAD_COUNT; ++i) {
-        void* return_value;
-        pthread_join(threads[i], &return_value);
+        void* output;
+        pthread_join(threads[i], &output);
     }
 
     pthread_attr_destroy(&thread_attributes);
