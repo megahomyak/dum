@@ -13,17 +13,13 @@ int current_job = NO_JOB;
 void* worker_thread(void* input) {
     pthread_mutex_lock(&current_job_guard);
     for (;;) {
-        while (current_job == NO_JOB) {
-            pthread_cond_wait(&current_job_changed, &current_job_guard);
-        }
-        if (current_job == SHOULD_STOP) {
-            break;
-        }
+        while (current_job == NO_JOB) pthread_cond_wait(&current_job_changed, &current_job_guard);
+        if (current_job == SHOULD_STOP) break;
         int client_descriptor = current_job;
         current_job = NO_JOB;
         pthread_mutex_unlock(&current_job_guard);
 
-        // Serve the client
+        /* serve the client */
 
         pthread_mutex_lock(&current_job_guard);
     }
@@ -63,6 +59,8 @@ int main(void) {
         void* input = NULL;
         pthread_create(&threads[i], &thread_attributes, worker_thread, input);
     }
+
+    /* listen */
 
     for (int i = 0; i < HANDLER_THREAD_COUNT; ++i) {
         void* output;
