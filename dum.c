@@ -18,29 +18,36 @@ int should_stop = 0;
 void* worker_thread(void* context_void_pointer) {
     ThreadContext* context_pointer = (ThreadContext*) context_void_pointer;
     pthread_mutex_lock(&context_pointer->client_descriptor_mutex);
+    int client_descriptor = -1;
     for (;;) {
-        int client_descriptor;
         for (;;) {
             pthread_mutex_lock(&should_stop_mutex);
-            int should_stop_ = should_stop;
+            int retrieved_should_stop = should_stop;
             pthread_mutex_unlock(&should_stop_mutex);
-            if (should_stop_) {
+            if (retrieved_should_stop) {
                 goto stop_worker;
             }
-            if ((client_descriptor = context_pointer->client_descriptor) != -1) {
+            client_descriptor = context_pointer->client_descriptor;
+            if (client_descriptor != -1) {
                 goto respond;
             }
             pthread_cond_wait(&context_pointer->thread_state_updated, &context_pointer->client_descriptor_mutex);
         }
         respond:
+        context_pointer->client_descriptor = -1;
         pthread_mutex_unlock(&context_pointer->client_descriptor_mutex);
 
         /* Send the file here */
+        close(client_descriptor);
+        client_descriptor = -1;
 
         pthread_mutex_lock(&context_pointer->client_descriptor_mutex);
     }
     stop_worker:
     pthread_mutex_unlock(&context_pointer->client_descriptor_mutex);
+    if (client_descriptor != -1) {
+        close(client_descriptor);
+    }
     return NULL;
 }
 
