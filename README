@@ -1,0 +1,2 @@
+"dum" is an extremely small file web server. Intentional vulnerabilities:
+* No checks for ".." in paths, meaning that a visitor can access files outside of the directory where the server was started
