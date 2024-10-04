@@ -1,5 +1,5 @@
 "dum" is an extremely small file web server. Intentional issues:
 * No checks for ".." in paths, meaning that a visitor can access files outside of the directory where the server was started
-* No memory deallocations on early exit on errors
+* No memory deallocation on exit
 
 PLEASE BE FUCKING AWARE THAT THIS IS NOT FOR PRODUCTION, THIS IS NOT FOR YOU, THIS IS NOT FOR YOUR MOTHER, THIS IS FOR *ME*. THE CODE MIGHT BE A PIECE OF NON-PRODUCTION-READY TURD AND I'M *AWARE* OF IT; IF YOU DON'T LIKE SOMETHING, CONSIDER SHUTTING DOWN YOUR PC

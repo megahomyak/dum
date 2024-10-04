@@ -99,10 +99,5 @@ int main(void) {
         pthread_join(threads[i], &output);
     }
 
-    pthread_attr_destroy(&thread_attributes);
-
-    pthread_cond_destroy(&current_job_changed);
-    pthread_mutex_destroy(&current_job_guard);
-
     return exit_code;
 }
