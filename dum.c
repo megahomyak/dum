@@ -42,14 +42,14 @@ void* worker_thread(void* context_void_pointer) {
     return NULL;
 }
 
-void register_signal_handler(void (*handler) (int)) {
+void set_signal_handler(void (*handler) (int)) {
     signal(SIGINT, handler);
     signal(SIGTERM, handler);
 }
 
 void stop_signal_handler(int signal_identifier) {
     (void)signal_identifier;
-    register_signal_handler(SIG_DFL);
+    set_signal_handler(SIG_DFL);
     pthread_mutex_lock(&should_stop_mutex);
     should_stop = 1;
     pthread_mutex_unlock(&should_stop_mutex);
@@ -68,7 +68,7 @@ int main(void) {
     pthread_mutexattr_init(&mutex_attributes);
 
     pthread_mutex_init(&should_stop_mutex, &mutex_attributes);
-    register_signal_handler(stop_signal_handler);
+    set_signal_handler(stop_signal_handler);
 
     for (int i = 0; i < HANDLER_THREAD_COUNT; ++i) {
         threads[i].client_descriptor = -1;
