@@ -3,51 +3,31 @@
 
 #define HANDLER_THREAD_COUNT 20
 
-typedef struct {
-    int client_descriptor;
-    pthread_mutex_t client_descriptor_mutex;
-    pthread_cond_t thread_state_updated;
-    pthread_t thread;
-} ThreadContext;
+#define NO_JOB -1
+#define SHOULD_STOP -2
 
-ThreadContext threads[HANDLER_THREAD_COUNT];
+pthread_mutex_t current_job_guard;
+pthread_cond_t current_job_changed;
+int current_job = NO_JOB;
 
-pthread_mutex_t should_stop_mutex;
-int should_stop = 0;
-
-void* worker_thread(void* context_void_pointer) {
-    ThreadContext* context_pointer = (ThreadContext*) context_void_pointer;
-    pthread_mutex_lock(&context_pointer->client_descriptor_mutex);
-    int client_descriptor = -1;
+void* worker_thread(void* input) {
+    pthread_mutex_lock(&current_job_guard);
     for (;;) {
-        for (;;) {
-            pthread_mutex_lock(&should_stop_mutex);
-            int retrieved_should_stop = should_stop;
-            pthread_mutex_unlock(&should_stop_mutex);
-            if (retrieved_should_stop) {
-                goto stop_worker;
-            }
-            client_descriptor = context_pointer->client_descriptor;
-            if (client_descriptor != -1) {
-                goto respond;
-            }
-            pthread_cond_wait(&context_pointer->thread_state_updated, &context_pointer->client_descriptor_mutex);
+        while (current_job == NO_JOB) {
+            pthread_cond_wait(&current_job_changed, &current_job_guard);
         }
-        respond:
-        context_pointer->client_descriptor = -1;
-        pthread_mutex_unlock(&context_pointer->client_descriptor_mutex);
+        if (current_job == SHOULD_STOP) {
+            break;
+        }
+        int client_descriptor = current_job;
+        current_job = NO_JOB;
+        pthread_mutex_unlock(&current_job_guard);
 
-        /* Send the file here */
-        close(client_descriptor);
-        client_descriptor = -1;
+        // Serve the client
 
-        pthread_mutex_lock(&context_pointer->client_descriptor_mutex);
+        pthread_mutex_lock(&current_job_guard);
     }
-    stop_worker:
-    pthread_mutex_unlock(&context_pointer->client_descriptor_mutex);
-    if (client_descriptor != -1) {
-        close(client_descriptor);
-    }
+    pthread_mutex_unlock(&current_job_guard);
     return NULL;
 }
 
@@ -59,45 +39,38 @@ void set_signal_handler(void (*handler) (int)) {
 void stop_signal_handler(int signal_identifier) {
     (void)signal_identifier;
     set_signal_handler(SIG_IGN);
-    pthread_mutex_lock(&should_stop_mutex);
-    should_stop = 1;
-    pthread_mutex_unlock(&should_stop_mutex);
-    for (int i = 0; i < HANDLER_THREAD_COUNT; ++i) {
-        pthread_cond_signal(&threads[i].thread_state_updated);
-    }
+    pthread_mutex_lock(&current_job_guard);
+    current_job = SHOULD_STOP;
+    pthread_cond_broadcast(&current_job_changed);
+    pthread_mutex_unlock(&current_job_guard);
 }
 
 int main(void) {
-    pthread_condattr_t condition_attributes;
-    pthread_condattr_init(&condition_attributes);
+    pthread_condattr_t* condition_attributes = NULL;
+    pthread_mutexattr_t* mutex_attributes = NULL;
+    pthread_mutex_init(&current_job_guard, mutex_attributes);
+    pthread_cond_init(&current_job_changed, condition_attributes);
+
+    pthread_t threads[HANDLER_THREAD_COUNT];
+
     pthread_attr_t thread_attributes;
     pthread_attr_init(&thread_attributes);
     pthread_attr_setstacksize(&thread_attributes, 1024);
-    pthread_mutexattr_t mutex_attributes;
-    pthread_mutexattr_init(&mutex_attributes);
-
-    pthread_mutex_init(&should_stop_mutex, &mutex_attributes);
-    set_signal_handler(stop_signal_handler);
 
     for (int i = 0; i < HANDLER_THREAD_COUNT; ++i) {
-        threads[i].client_descriptor = -1;
-        pthread_mutex_init(&threads[i].client_descriptor_mutex, &mutex_attributes);
-        pthread_cond_init(&threads[i].thread_state_updated, &condition_attributes);
-        pthread_create(&threads[i].thread, &thread_attributes, worker_thread, &threads[i]);
+        void* input = NULL;
+        pthread_create(&threads[i], &thread_attributes, worker_thread, input);
     }
 
     for (int i = 0; i < HANDLER_THREAD_COUNT; ++i) {
-        void* thread_return_value = NULL;
-        pthread_join(threads[i].thread, &thread_return_value);
-        pthread_cond_destroy(&threads[i].thread_state_updated);
-        pthread_mutex_destroy(&threads[i].client_descriptor_mutex);
+        void* return_value;
+        pthread_join(threads[i], &return_value);
     }
 
-    pthread_mutex_destroy(&should_stop_mutex);
-
-    pthread_mutexattr_destroy(&mutex_attributes);
     pthread_attr_destroy(&thread_attributes);
-    pthread_condattr_destroy(&condition_attributes);
+
+    pthread_cond_destroy(&current_job_changed);
+    pthread_mutex_destroy(&current_job_guard);
 
     return 0;
 }
