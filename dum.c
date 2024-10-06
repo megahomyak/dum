@@ -7,6 +7,7 @@
 #include <sys/sendfile.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <limits.h>
 
 #define PORT "80"
 
