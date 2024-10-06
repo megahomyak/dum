@@ -87,7 +87,7 @@ int main(void) {
 
     pthread_attr_t thread_attributes;
     try(1, pthread_attr_init(&thread_attributes));
-    try(2, pthread_attr_setstacksize(&thread_attributes, 1024));
+    try(2, pthread_attr_setstacksize(&thread_attributes, PTHREAD_STACK_MIN));
 
     struct addrinfo* result;
     try(3, getaddrinfo(/*name=*/NULL, PORT, &hints, &result));
