@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include <string.h>
 #include <netdb.h>
 #include <sys/socket.h>
@@ -9,7 +10,7 @@
 #include <fcntl.h>
 #include <limits.h>
 
-#define PORT "80"
+const char* PORT = "8009";
 
 #define try(exit_code, expr) if(expr != 0) return exit_code;
 #define smallstring(name, contents) const char name[sizeof(contents) - 1] = contents
@@ -82,7 +83,7 @@ void* worker_thread(void* input_void) {
 int main(void) {
     struct addrinfo hints;
     memset(&hints, 0, sizeof(hints));
-    hints.ai_family = AF_UNSPEC;
+    hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_flags = AI_PASSIVE;
 
@@ -98,19 +99,24 @@ int main(void) {
         server_socket = socket(current->ai_family, current->ai_socktype, current->ai_protocol);
 
         if (server_socket != -1) {
-            if (bind(server_socket, result->ai_addr, result->ai_addrlen) == -1) close(server_socket);
+            if (bind(server_socket, current->ai_addr, current->ai_addrlen) == -1) close(server_socket);
             else break;
         }
 
         current = current->ai_next;
         if (current == NULL) return 4;
     }
-    freeaddrinfo(current);
+
+    freeaddrinfo(result);
 
     try(5, listen(server_socket, SOMAXCONN));
 
     for (;;) {
+        printf("a\n");
+        fflush(stdout);
         int client_socket = accept(server_socket, /*addr=*/NULL, /*addrlen=*/NULL);
+        printf("b\n");
+        fflush(stdout);
         if (client_socket == -1) continue;
         struct WorkerInput* input = malloc(sizeof(*input));
         if (input == NULL) return 6;

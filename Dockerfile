@@ -12,4 +12,5 @@ RUN make dum
 
 FROM scratch
 COPY --from=build /app/dum .
+COPY test_data .
 CMD ["./dum"]
