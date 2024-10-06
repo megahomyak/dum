@@ -12,6 +12,7 @@
 
 #define try(expr) if(expr != 0) return 1;
 #define smallstring(name, contents) const char name[sizeof(contents) - 1] = contents
+#define IGNORE(call) do { call; } while (0)
 
 struct WorkerInput {
     int client_socket;
@@ -19,7 +20,7 @@ struct WorkerInput {
 
 void send_not_found(int client_socket) {
     smallstring(response, "HTTP/1.1 404 Not Found\r\n\r\n");
-    write(client_socket, response, sizeof(response));
+    if (write(client_socket, response, sizeof(response)) == -1) { /* does not matter */ }
 }
 
 void send_regular_file(int file_descriptor, int client_socket, size_t file_size) {
@@ -28,8 +29,8 @@ void send_regular_file(int file_descriptor, int client_socket, size_t file_size)
         "Cache-Control: max-age=31536000, public\r\n"
         "\r\n"
     );
-    write(client_socket, heading, sizeof(heading));
-    sendfile(client_socket, file_descriptor, /*offset=*/NULL, file_size);
+    if (write(client_socket, heading, sizeof(heading)) == -1) { /* does not matter */ }
+    if (sendfile(client_socket, file_descriptor, /*offset=*/NULL, file_size) == -1) { /* does not matter */ }
 }
 
 void* worker_thread(void* input_void) {
