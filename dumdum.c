@@ -16,8 +16,27 @@ struct WorkerInput {
 void* worker_thread(void* input_void) {
     struct WorkerInput* input = input_void;
 
+    char request[512];
+    int bytes_read = recv(input->client_socket, request, sizeof(request) - 1, 0);
+    if (bytes_read <= 0) goto end;
+    request[bytes_read] = '\0';
+    char get[4] = "GET ";
+    if (strncmp(request, get, sizeof(get)) != 0) goto end;
+    char* path_end = strchr(request + sizeof(get), ' ');
+    if (path_end == NULL) goto end;
+    *path_end = '\0';
+    char* path = request + sizeof(get) - 1;
+    *path = '.';
+    FILE* file = fopen(path, "rb");
+    if (file == NULL) {
+        char 
+        send()
+    } else {
 
+    }
 
+    end:
+    close(input->client_socket);
     free(input);
     return NULL;
 }
@@ -59,6 +78,7 @@ int main(void) {
         if (input == NULL) return 1;
         pthread_t thread;
         try(pthread_create(&thread, &thread_attributes, worker_thread, input));
+        try(pthread_detach(thread));
     }
 
     return 0;
