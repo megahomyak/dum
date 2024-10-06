@@ -10,7 +10,7 @@
 
 #define PORT "80"
 
-#define try(expr) if(expr != 0) return 1;
+#define try(exit_code, expr) if(expr != 0) return exit_code;
 #define smallstring(name, contents) const char name[sizeof(contents) - 1] = contents
 #define IGNORE(call) do { call; } while (0)
 
@@ -86,11 +86,11 @@ int main(void) {
     hints.ai_flags = AI_PASSIVE;
 
     pthread_attr_t thread_attributes;
-    try(pthread_attr_init(&thread_attributes));
-    try(pthread_attr_setstacksize(&thread_attributes, 1024));
+    try(1, pthread_attr_init(&thread_attributes));
+    try(2, pthread_attr_setstacksize(&thread_attributes, 1024));
 
     struct addrinfo* result;
-    try(getaddrinfo(/*name=*/NULL, PORT, &hints, &result));
+    try(3, getaddrinfo(/*name=*/NULL, PORT, &hints, &result));
     struct addrinfo* current = result;
     int server_socket;
     for (;;) {
@@ -102,20 +102,20 @@ int main(void) {
         }
 
         current = current->ai_next;
-        if (current == NULL) return 1;
+        if (current == NULL) return 4;
     }
     freeaddrinfo(current);
 
-    try(listen(server_socket, SOMAXCONN));
+    try(5, listen(server_socket, SOMAXCONN));
 
     for (;;) {
         int client_socket = accept(server_socket, /*addr=*/NULL, /*addrlen=*/NULL);
         if (client_socket == -1) continue;
         struct WorkerInput* input = malloc(sizeof(*input));
-        if (input == NULL) return 1;
+        if (input == NULL) return 6;
         pthread_t thread;
-        try(pthread_create(&thread, &thread_attributes, worker_thread, input));
-        try(pthread_detach(thread));
+        try(7, pthread_create(&thread, &thread_attributes, worker_thread, input));
+        try(8, pthread_detach(thread));
     }
 
     return 0;
