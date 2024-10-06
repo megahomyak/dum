@@ -1,226 +1,120 @@
-#include <pthread.h>
-#include <signal.h>
-#include <netdb.h>
 #include <string.h>
+#include <netdb.h>
 #include <sys/socket.h>
-#include <poll.h>
+#include <pthread.h>
 #include <unistd.h>
-#include <errno.h>
+#include <stdlib.h>
+#include <sys/sendfile.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
-/* configuration constants begin */
-#define HANDLER_THREAD_COUNT 40
 #define PORT "80"
-/* configuration constants end */
 
-#define NO_JOB -1
-#define SHOULD_STOP -2
+#define try(expr) if(expr != 0) return 1;
+#define smallstring(name, contents) const char name[sizeof(contents) - 1] = contents
 
-pthread_mutex_t current_job_guard;
-pthread_cond_t current_job_placed;
-pthread_cond_t current_job_taken;
-int current_job = NO_JOB;
+struct WorkerInput {
+    int client_socket;
+};
 
-void close_for_sure(int file_descriptor) {
-    restart:
-    if (close(file_descriptor) == -1 && errno == EINTR) goto restart;
+void send_not_found(int client_socket) {
+    smallstring(response, "HTTP/1.1 404 Not Found\r\n\r\n");
+    write(client_socket, response, sizeof(response));
 }
 
-int poll_for_sure(int socket, int timeout_ms) {
-    struct pollfd pollfd = {
-        .fd = socket,
-        .events = POLLIN,
-    };
-    nfds_t pollfd_count = 1;
-    int result;
-    restart:
-    result = poll(&pollfd, pollfd_count, timeout_ms);
-    if (result == -1 && errno == EINTR) goto restart;
-    return result;
+void send_regular_file(int file_descriptor, int client_socket, size_t file_size) {
+    smallstring(heading,
+        "HTTP/1.1 200 OK\r\n"
+        "Cache-Control: max-age=31536000, public\r\n"
+        "\r\n"
+    );
+    write(client_socket, heading, sizeof(heading));
+    sendfile(client_socket, file_descriptor, /*offset=*/NULL, file_size);
 }
 
-int recv_for_sure(int file_descriptor, void* buf, int buf_size) {
-    int flags = MSG_DONTWAIT;
-    int result;
-    restart:
-    result = recv(file_descriptor, buf, buf_size, flags);
-    if (result == -1 && errno == EINTR) goto restart;
-    return result;
-}
+void* worker_thread(void* input_void) {
+    struct WorkerInput* input = input_void;
 
-typedef struct {
-    int file_descriptor;
-    char buffer[512];
-    int seeking_index;
-    int _fill_index;
-    int _is_ended;
-} RecvMore;
-
-void init_recv_more(RecvMore* recv_more, int file_descriptor) {
-    recv_more->file_descriptor = file_descriptor;
-    recv_more->seeking_index = 0;
-    recv_more->_fill_index = 0;
-}
-
-int recv_more(RecvMore* context) {
-    if (context->_fill_index == context->seeking_index) return -1;
-    int flags = 0;
-    int remaining_space = sizeof(context->buffer) - context->_fill_index;
-    if (remaining_space != 0) {
-        int result = recv(context->file_descriptor, context->buffer + context->_fill_index, remaining_space, flags);
-        if (result > 0) context->_fill_index += result;
-    }
-    return context->buffer[context->seeking_index++];
-}
-
-void* worker_thread(void* input) {
-    pthread_mutex_lock(&current_job_guard);
-    for (;;) {
-        while (current_job == NO_JOB) pthread_cond_wait(&current_job_placed, &current_job_guard);
-        if (current_job == SHOULD_STOP) break;
-        int client_socket = current_job;
-        current_job = NO_JOB;
-        pthread_cond_signal(&current_job_taken);
-        pthread_mutex_unlock(&current_job_guard);
-
-        /* serve the client begin */
-
-        RecvMore output;
-        init_recv_more(&output, client_socket);
-        recv_more(&output);
-
-        for (;;) {
-            char get[] = "GET ";
-            for (int i = 0; i < sizeof(get); ++i) {
-                char c;
-                size_t char_amount = 1;
-                int flags = 0;
-                if (recv(client_socket, &c, char_amount, flags) <= 0) goto stop_serving;
-                if (c != get[i]) goto stop_serving;
+    #define REQUEST_LINE_SIZE 512
+    #define INDEX_HTML_POSTFIX "/index.html"
+    char request[REQUEST_LINE_SIZE + sizeof('\0') + (sizeof(INDEX_HTML_POSTFIX) - 1)];
+    int bytes_read = read(input->client_socket, request, REQUEST_LINE_SIZE);
+    if (bytes_read <= 0) goto end;
+    request[bytes_read] = '\0';
+    smallstring(get, "GET ");
+    if (strncmp(request, get, sizeof(get)) != 0) goto end;
+    char* path_end = strchr(request + sizeof(get), ' ');
+    if (path_end == NULL) goto end;
+    *path_end = '\0';
+    char* path = request + sizeof(get) - 1;
+    *path = '.';
+    send_file:;
+    int file_descriptor = open(path, O_RDONLY);
+    if (file_descriptor == -1) send_not_found(input->client_socket);
+    else {
+        struct stat statbuf;
+        if (fstat(file_descriptor, &statbuf) == -1) send_not_found(input->client_socket);
+        else if (S_ISDIR(statbuf.st_mode)) {
+            memcpy(path_end, INDEX_HTML_POSTFIX, sizeof(INDEX_HTML_POSTFIX));
+            close(file_descriptor);
+            int file_descriptor = open(path, O_RDONLY);
+            if (file_descriptor == -1) send_not_found(input->client_socket);
+            else {
+                struct stat statbuf;
+                if (fstat(file_descriptor, &statbuf) == -1) send_not_found(input->client_socket);
+                else if (S_ISREG(statbuf.st_mode)) send_regular_file(file_descriptor, input->client_socket, statbuf.st_size);
+                else send_not_found(input->client_socket);
+                close(file_descriptor);
             }
-
-            char path[512];
-            path[0] = '.';
-            int i = 1;
-            for (;;) {
-                char c;
-                size_t char_amount = 1;
-                int flags = 0;
-                if (recv(client_socket, &c, char_amount, flags) <= 0) goto stop_serving;
-                if (c == ' ') break;
-                ++i;
-                if (i == sizeof(path)) goto stop_serving;
-            }
-        }
-
-        stop_serving:
-        close_for_sure(client_socket);
-
-        /* serve the client end */
-
-        pthread_mutex_lock(&current_job_guard);
+        } else if (S_ISREG(statbuf.st_mode)) send_regular_file(file_descriptor, input->client_socket, statbuf.st_size);
+        else send_not_found(input->client_socket);
+        close(file_descriptor);
     }
-    pthread_mutex_unlock(&current_job_guard);
+
+    end:
+    close(input->client_socket);
+    free(input);
     return NULL;
 }
 
-void set_signal_handler(void (*handler) (int)) {
-    signal(SIGINT, handler);
-    signal(SIGTERM, handler);
-}
-
-void stop(void) {
-    pthread_mutex_lock(&current_job_guard);
-    current_job = SHOULD_STOP;
-    pthread_cond_broadcast(&current_job_placed);
-    pthread_cond_signal(&current_job_taken);
-    pthread_mutex_unlock(&current_job_guard);
-}
-
-void stop_signal_handler(int signal_identifier) {
-    (void) signal_identifier;
-    set_signal_handler(SIG_IGN);
-    stop();
-}
-
 int main(void) {
-    #define try(expr) if(expr != 0) return 1;
-
-    pthread_condattr_t* condition_attributes = NULL;
-    pthread_mutexattr_t* mutex_attributes = NULL;
-    try(pthread_mutex_init(&current_job_guard, mutex_attributes));
-    try(pthread_cond_init(&current_job_placed, condition_attributes));
-    try(pthread_cond_init(&current_job_taken, condition_attributes));
-
-    set_signal_handler(stop_signal_handler);
-
-    pthread_t threads[HANDLER_THREAD_COUNT];
+    struct addrinfo hints;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_flags = AI_PASSIVE;
 
     pthread_attr_t thread_attributes;
     try(pthread_attr_init(&thread_attributes));
     try(pthread_attr_setstacksize(&thread_attributes, 1024));
 
-    for (int i = 0; i < HANDLER_THREAD_COUNT; ++i) {
-        void* input = NULL;
-        try(pthread_create(&threads[i], &thread_attributes, worker_thread, input));
-    }
-
-    /* listen for new connections begin */
-
-    struct addrinfo hints;
-    memset(&hints, 0, sizeof hints);
-    hints.ai_family = AF_UNSPEC;
-    hints.ai_socktype = SOCK_STREAM;
-    hints.ai_flags = AI_PASSIVE;
-
     struct addrinfo* result;
-    char* name = NULL;
-    try(getaddrinfo(name, PORT, &hints, &result));
-
-    int server_socket = -1;
+    try(getaddrinfo(/*name=*/NULL, PORT, &hints, &result));
     struct addrinfo* current = result;
+    int server_socket;
     for (;;) {
-        if ((server_socket = socket(current->ai_family, current->ai_socktype | SOCK_NONBLOCK, current->ai_protocol)) == -1) goto next_address;
-        if (bind(server_socket, result->ai_addr, result->ai_addrlen) == -1) {
-            close_for_sure(server_socket);
-            goto next_address;
-        };
-        break;
+        server_socket = socket(current->ai_family, current->ai_socktype, current->ai_protocol);
 
-        next_address:
+        if (server_socket != -1) {
+            if (bind(server_socket, result->ai_addr, result->ai_addrlen) == -1) close(server_socket);
+            else break;
+        }
+
         current = current->ai_next;
         if (current == NULL) return 1;
     }
-
-    freeaddrinfo(result);
+    freeaddrinfo(current);
 
     try(listen(server_socket, SOMAXCONN));
 
     for (;;) {
-        int timeout_ms = 250;
-        int can_listen = poll_in(server_socket, timeout_ms) > 0;
-
-        pthread_mutex_lock(&current_job_guard);
-        while (current_job >= 0) pthread_cond_wait(&current_job_taken, &current_job_guard);
-        if (current_job == NO_JOB) {
-            if (can_listen) {
-                struct sockaddr* addr = NULL;
-                socklen_t* addr_len = NULL;
-                current_job = accept(server_socket, addr, addr_len);
-                pthread_cond_signal(&current_job_placed);
-            }
-        } else if (current_job == SHOULD_STOP) {
-            break;
-        }
-        pthread_mutex_unlock(&current_job_guard);
-    }
-
-    /* listen for new connections end */
-
-    close_for_sure(server_socket);
-
-    for (int i = 0; i < HANDLER_THREAD_COUNT; ++i) {
-        void* output;
-        pthread_join(threads[i], &output);
+        int client_socket = accept(server_socket, /*addr=*/NULL, /*addrlen=*/NULL);
+        if (client_socket == -1) continue;
+        struct WorkerInput* input = malloc(sizeof(*input));
+        if (input == NULL) return 1;
+        pthread_t thread;
+        try(pthread_create(&thread, &thread_attributes, worker_thread, input));
+        try(pthread_detach(thread));
     }
 
     return 0;
