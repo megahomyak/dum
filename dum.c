@@ -12,9 +12,9 @@
 
 const char* PORT = "8009";
 
-#define try(exit_code, expr) if(expr != 0) return exit_code;
+#define try(text, expr) if(expr != 0) die(text);
 #define smallstring(name, contents) const char name[sizeof(contents) - 1] = contents
-#define IGNORE(call) do { call; } while (0)
+#define die(text) { perror(text); return 1; }
 
 struct WorkerInput {
     int client_socket;
@@ -88,11 +88,11 @@ int main(void) {
     hints.ai_flags = AI_PASSIVE;
 
     pthread_attr_t thread_attributes;
-    try(1, pthread_attr_init(&thread_attributes));
-    try(2, pthread_attr_setstacksize(&thread_attributes, PTHREAD_STACK_MIN));
+    try("pthread_attr_init", pthread_attr_init(&thread_attributes));
+    try("pthread_attr_setstacksize", pthread_attr_setstacksize(&thread_attributes, PTHREAD_STACK_MIN));
 
     struct addrinfo* result;
-    try(3, getaddrinfo(/*name=*/NULL, PORT, &hints, &result));
+    try("getaddrinfo", getaddrinfo(/*name=*/NULL, PORT, &hints, &result));
     struct addrinfo* current = result;
     int server_socket;
     for (;;) {
@@ -104,12 +104,12 @@ int main(void) {
         }
 
         current = current->ai_next;
-        if (current == NULL) return 4;
+        if (current == NULL) die("no matching addresses");
     }
 
     freeaddrinfo(result);
 
-    try(5, listen(server_socket, SOMAXCONN));
+    try("listen", listen(server_socket, SOMAXCONN));
 
     for (;;) {
         printf("a\n");
@@ -119,10 +119,10 @@ int main(void) {
         fflush(stdout);
         if (client_socket == -1) continue;
         struct WorkerInput* input = malloc(sizeof(*input));
-        if (input == NULL) return 6;
+        if (input == NULL) die("couldn't malloc");
         pthread_t thread;
-        try(7, pthread_create(&thread, &thread_attributes, worker_thread, input));
-        try(8, pthread_detach(thread));
+        try("pthread_create", pthread_create(&thread, &thread_attributes, worker_thread, input));
+        try("pthread_detach", pthread_detach(thread));
     }
 
     return 0;
