@@ -65,17 +65,14 @@ void* worker_thread(void* input_void) {
         if (fstat(file_descriptor, &statbuf) == -1) send_not_found(input->client_socket);
         else if (S_ISDIR(statbuf.st_mode)) {
             memcpy(path_end, INDEX_HTML_POSTFIX, sizeof(INDEX_HTML_POSTFIX));
-            close(file_descriptor);
             int file_descriptor = open(path, O_RDONLY);
             if (file_descriptor == -1) send_not_found(input->client_socket);
             else {
                 if (fstat(file_descriptor, &statbuf) == -1) send_not_found(input->client_socket);
-                else if (S_ISREG(statbuf.st_mode)) send_regular_file(file_descriptor, input->client_socket, statbuf.st_size);
-                else send_not_found(input->client_socket);
+                else send_regular_file(file_descriptor, input->client_socket, statbuf.st_size);
                 close(file_descriptor);
             }
-        } else if (S_ISREG(statbuf.st_mode)) send_regular_file(file_descriptor, input->client_socket, statbuf.st_size);
-        else send_not_found(input->client_socket);
+        } else send_regular_file(file_descriptor, input->client_socket, statbuf.st_size);
         close(file_descriptor);
     }
 
