@@ -11,5 +11,5 @@ RUN make dum
 
 
 FROM scratch
-COPY --from=build /app/dum .
-ENTRYPOINT ["./dum"]
+COPY --from=build /app/dum /dum
+ENTRYPOINT ["/dum"]
