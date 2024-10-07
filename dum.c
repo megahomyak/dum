@@ -112,11 +112,7 @@ int main(void) {
     try("listen", listen(server_socket, SOMAXCONN));
 
     for (;;) {
-        printf("a\n");
-        fflush(stdout);
         int client_socket = accept(server_socket, /*addr=*/NULL, /*addrlen=*/NULL);
-        printf("b\n");
-        fflush(stdout);
         if (client_socket == -1) continue;
         struct WorkerInput* input = malloc(sizeof(*input));
         if (input == NULL) die("couldn't malloc");
