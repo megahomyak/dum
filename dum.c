@@ -11,7 +11,7 @@
 #include <limits.h>
 #include <signal.h>
 
-const char* PORT = "8009";
+const char* PORT = "80";
 
 #define try(text, expr) if(expr != 0) die(text);
 #define smallstring(name, contents) const char name[sizeof(contents) - 1] = contents
