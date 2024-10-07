@@ -9,6 +9,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <signal.h>
 
 const char* PORT = "8009";
 
@@ -33,6 +34,11 @@ void send_regular_file(int file_descriptor, int client_socket, size_t file_size)
     );
     if (write(client_socket, heading, sizeof(heading)) == -1) { /* does not matter */ }
     if (sendfile(client_socket, file_descriptor, /*offset=*/NULL, file_size) == -1) { /* does not matter */ }
+}
+
+void handle_signal(int signal) {
+    (void)signal;
+    exit(0);
 }
 
 void* worker_thread(void* input_void) {
@@ -81,6 +87,9 @@ void* worker_thread(void* input_void) {
 }
 
 int main(void) {
+    signal(SIGINT, handle_signal);
+    signal(SIGTERM, handle_signal);
+
     struct addrinfo hints;
     memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_INET;
