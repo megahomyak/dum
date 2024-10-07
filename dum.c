@@ -99,6 +99,8 @@ int main(void) {
         server_socket = socket(current->ai_family, current->ai_socktype, current->ai_protocol);
 
         if (server_socket != -1) {
+            int yes = 1;
+            try("setsockopt", setsockopt(server_socket, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes)));
             if (bind(server_socket, current->ai_addr, current->ai_addrlen) == -1) close(server_socket);
             else break;
         }
