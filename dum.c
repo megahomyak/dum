@@ -69,7 +69,6 @@ void* worker_thread(void* input_void) {
             int file_descriptor = open(path, O_RDONLY);
             if (file_descriptor == -1) send_not_found(input->client_socket);
             else {
-                struct stat statbuf;
                 if (fstat(file_descriptor, &statbuf) == -1) send_not_found(input->client_socket);
                 else if (S_ISREG(statbuf.st_mode)) send_regular_file(file_descriptor, input->client_socket, statbuf.st_size);
                 else send_not_found(input->client_socket);
