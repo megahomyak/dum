@@ -36,11 +36,6 @@ void send_regular_file(int file_descriptor, int client_socket, size_t file_size)
     if (sendfile(client_socket, file_descriptor, /*offset=*/NULL, file_size) == -1) { /* does not matter */ }
 }
 
-void handle_signal(int signal) {
-    (void)signal;
-    exit(0);
-}
-
 void* worker_thread(void* input_void) {
     struct WorkerInput* input = input_void;
 
@@ -48,6 +43,7 @@ void* worker_thread(void* input_void) {
     #define INDEX_HTML_POSTFIX "/index.html"
     char request[REQUEST_LINE_SIZE + sizeof('\0') + (sizeof(INDEX_HTML_POSTFIX) - 1)];
     int bytes_read = read(input->client_socket, request, REQUEST_LINE_SIZE);
+    if (bytes_read == 0) {fprintf(stderr, "beep! %lu", read(input->client_socket, request, REQUEST_LINE_SIZE));}
     if (bytes_read <= 0) goto end;
     request[bytes_read] = '\0';
     smallstring(get, "GET ");
@@ -82,6 +78,10 @@ void* worker_thread(void* input_void) {
     return NULL;
 }
 
+void handle_signal(int signal) {
+    (void)signal;
+    exit(0);
+}
 int main(void) {
     signal(SIGINT, handle_signal);
     signal(SIGTERM, handle_signal);
@@ -105,7 +105,7 @@ int main(void) {
 
         if (server_socket != -1) {
             int yes = 1;
-            try("setsockopt", setsockopt(server_socket, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes)));
+            try("setsockopt reuseaddr", setsockopt(server_socket, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes)));
             if (bind(server_socket, current->ai_addr, current->ai_addrlen) == -1) close(server_socket);
             else break;
         }
@@ -120,6 +120,8 @@ int main(void) {
 
     for (;;) {
         int client_socket = accept(server_socket, /*addr=*/NULL, /*addrlen=*/NULL);
+        int yes = 1;
+        try("setsockopt keepalive", setsockopt(client_socket, SOL_SOCKET, SO_KEEPALIVE, &yes, sizeof(yes)));
         if (client_socket == -1) continue;
         struct WorkerInput* input = malloc(sizeof(*input));
         if (input == NULL) die("couldn't malloc");
