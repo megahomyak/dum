@@ -16,6 +16,7 @@ const char* PORT = "80";
 #define try(text, expr) if(expr != 0) die(text);
 #define smallstring(name, contents) const char name[sizeof(contents) - 1] = contents
 #define die(text) { perror(text); return 1; }
+#define ignore_failure(call) if (call == -1) { /* does not matter */ }
 
 struct WorkerInput {
     int client_socket;
@@ -26,7 +27,7 @@ void send_not_found(int client_socket) {
         "HTTP/1.1 404 Not Found\r\n"
         "\r\n"
     );
-    if (write(client_socket, response, sizeof(response)) == -1) { /* does not matter */ }
+    ignore_failure(write(client_socket, response, sizeof(response)));
 }
 
 void send_regular_file(int file_descriptor, int client_socket, size_t file_size) {
@@ -35,8 +36,8 @@ void send_regular_file(int file_descriptor, int client_socket, size_t file_size)
         "Cache-Control: max-age=31536000, public\r\n"
         "\r\n"
     );
-    if (write(client_socket, heading, sizeof(heading)) == -1) { /* does not matter */ }
-    if (sendfile(client_socket, file_descriptor, /*offset=*/NULL, file_size) == -1) { /* does not matter */ }
+    ignore_failure(write(client_socket, heading, sizeof(heading)));
+    ignore_failure(sendfile(client_socket, file_descriptor, /*offset=*/NULL, file_size));
 }
 
 void* worker_thread(void* input_void) {
