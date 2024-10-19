@@ -30,7 +30,7 @@ void send_not_found(int client_socket) {
     ignore_failure(write(client_socket, response, sizeof(response)));
 }
 
-void send_regular_file(int file_descriptor, int client_socket, size_t file_size) {
+void send_file(int file_descriptor, int client_socket, size_t file_size) {
     smallstring(heading,
         "HTTP/1.1 200 OK\r\n"
         "Cache-Control: max-age=31536000, public\r\n"
@@ -44,36 +44,26 @@ void* worker_thread(void* input_void) {
     struct WorkerInput* input = input_void;
 
     #define REQUEST_LINE_SIZE 512
-    #define INDEX_HTML_POSTFIX "/index.html"
-    char request[REQUEST_LINE_SIZE + sizeof('\0') + (sizeof(INDEX_HTML_POSTFIX) - 1)];
+    char request[REQUEST_LINE_SIZE + sizeof('\0')];
     int bytes_read = read(input->client_socket, request, REQUEST_LINE_SIZE);
     if (bytes_read <= 0) goto end;
     request[bytes_read] = '\0';
-    smallstring(get, "GET ");
-    if (strncmp(request, get, sizeof(get)) != 0) goto end;
-    char* path_end = strchr(request + sizeof(get), ' ');
-    if (path_end == NULL) goto end;
-    *path_end = '\0';
-    char* path = request + sizeof(get) - 1;
-    *path = '.';
-    send_file:;
-    int file_descriptor = open(path, O_RDONLY);
-    if (file_descriptor == -1) send_not_found(input->client_socket);
-    else {
-        struct stat statbuf;
-        if (fstat(file_descriptor, &statbuf) == -1) send_not_found(input->client_socket);
-        else if (S_ISDIR(statbuf.st_mode)) {
-            memcpy(path_end, INDEX_HTML_POSTFIX, sizeof(INDEX_HTML_POSTFIX));
-            int file_descriptor = open(path, O_RDONLY);
-            if (file_descriptor == -1) send_not_found(input->client_socket);
-            else {
-                if (fstat(file_descriptor, &statbuf) == -1) send_not_found(input->client_socket);
-                else send_regular_file(file_descriptor, input->client_socket, statbuf.st_size);
-                close(file_descriptor);
-            }
-        } else send_regular_file(file_descriptor, input->client_socket, statbuf.st_size);
-        close(file_descriptor);
+
+    smallstring(get_prefix, "GET /");
+    if (strncmp(request, get_prefix, sizeof(get_prefix)) != 0) goto end;
+    char* path = request + sizeof(get_prefix);
+
+    {
+        char* path_end = strchr(path, ' ');
+        if (path_end == NULL) goto end;
+        *path_end = '\0';
     }
+
+    struct stat statbuf;
+    int file_descriptor = -1;
+    if ((file_descriptor = open(path, O_RDONLY)) != -1 && fstat(file_descriptor, &statbuf) != -1) send_file(file_descriptor, input->client_socket, statbuf.st_size);
+    else send_not_found(input->client_socket);
+    if (file_descriptor != -1) close(file_descriptor);
 
     end:
     close(input->client_socket);
@@ -102,6 +92,7 @@ int main(void) {
 
     struct addrinfo* result;
     try("getaddrinfo", getaddrinfo(/*name=*/NULL, PORT, &hints, &result));
+
     struct addrinfo* current = result;
     int server_socket;
     for (;;) {
@@ -117,19 +108,18 @@ int main(void) {
         current = current->ai_next;
         if (current == NULL) die("no matching addresses");
     }
-
     freeaddrinfo(result);
 
     try("listen", listen(server_socket, SOMAXCONN));
 
     for (;;) {
         int client_socket = accept(server_socket, /*addr=*/NULL, /*addrlen=*/NULL);
-        int yes = 1;
-        try("setsockopt keepalive", setsockopt(client_socket, SOL_SOCKET, SO_KEEPALIVE, &yes, sizeof(yes)));
         if (client_socket == -1) continue;
+
         struct WorkerInput* input = malloc(sizeof(*input));
         if (input == NULL) die("couldn't malloc");
         input->client_socket = client_socket;
+
         pthread_t thread;
         try("pthread_create", pthread_create(&thread, &thread_attributes, worker_thread, input));
         try("pthread_detach", pthread_detach(thread));
