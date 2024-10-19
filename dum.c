@@ -85,6 +85,7 @@ void handle_signal(int signal) {
     (void)signal;
     exit(0);
 }
+
 int main(void) {
     signal(SIGINT, handle_signal);
     signal(SIGTERM, handle_signal);
