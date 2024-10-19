@@ -22,7 +22,10 @@ struct WorkerInput {
 };
 
 void send_not_found(int client_socket) {
-    smallstring(response, "HTTP/1.1 404 Not Found\r\n\r\n");
+    smallstring(response,
+        "HTTP/1.1 404 Not Found\r\n"
+        "\r\n"
+    );
     if (write(client_socket, response, sizeof(response)) == -1) { /* does not matter */ }
 }
 
@@ -43,7 +46,6 @@ void* worker_thread(void* input_void) {
     #define INDEX_HTML_POSTFIX "/index.html"
     char request[REQUEST_LINE_SIZE + sizeof('\0') + (sizeof(INDEX_HTML_POSTFIX) - 1)];
     int bytes_read = read(input->client_socket, request, REQUEST_LINE_SIZE);
-    if (bytes_read == 0) {fprintf(stderr, "beep! %lu", read(input->client_socket, request, REQUEST_LINE_SIZE));}
     if (bytes_read <= 0) goto end;
     request[bytes_read] = '\0';
     smallstring(get, "GET ");
@@ -125,6 +127,7 @@ int main(void) {
         if (client_socket == -1) continue;
         struct WorkerInput* input = malloc(sizeof(*input));
         if (input == NULL) die("couldn't malloc");
+        input->client_socket = client_socket;
         pthread_t thread;
         try("pthread_create", pthread_create(&thread, &thread_attributes, worker_thread, input));
         try("pthread_detach", pthread_detach(thread));
