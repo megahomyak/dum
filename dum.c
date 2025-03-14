@@ -26,6 +26,7 @@ void send_not_found(int client_socket) {
     smallstring(response,
         "HTTP/1.1 404 Not Found\r\n"
         "\r\n"
+        "404 Not Found"
     );
     ignore_failure(write(client_socket, response, sizeof(response)));
 }
