@@ -74,7 +74,7 @@ void* worker_thread(void* input_void) {
 
 void handle_signal(int signal) {
     (void)signal;
-    exit(0);
+    _exit(0);
 }
 
 int main(void) {
