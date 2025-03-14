@@ -81,7 +81,10 @@ void* worker_thread(void* input_void) {
     }
 
     if (result_descriptor == -1) send_not_found(input->client_socket);
-    else send_file(result_descriptor, input->client_socket, statbuf.st_size);
+    else {
+        send_file(result_descriptor, input->client_socket, statbuf.st_size);
+        close(result_descriptor);
+    }
 
     end:
     close(input->client_socket);
