@@ -41,11 +41,23 @@ void send_file(int file_descriptor, int client_socket, size_t file_size) {
     ignore_failure(sendfile(client_socket, file_descriptor, /*offset=*/NULL, file_size));
 }
 
+int open_and_stat(char* path, struct stat* statbuf) {
+    int file_descriptor = open(path, O_RDONLY);
+    if (file_descriptor != -1) {
+        if (fstat(file_descriptor, statbuf) == -1) {
+            close(file_descriptor);
+            file_descriptor = -1;
+        }
+    }
+    return file_descriptor;
+}
+
 void* worker_thread(void* input_void) {
     struct WorkerInput* input = input_void;
 
+    #define INDEX_POSTFIX "/index.html"
     #define REQUEST_LINE_SIZE 512
-    char request[REQUEST_LINE_SIZE + sizeof('\0')];
+    char request[REQUEST_LINE_SIZE + (sizeof(INDEX_POSTFIX) - 1) + sizeof('\0')];
     int bytes_read = read(input->client_socket, request, REQUEST_LINE_SIZE);
     if (bytes_read <= 0) goto end;
     request[bytes_read] = '\0';
@@ -54,17 +66,22 @@ void* worker_thread(void* input_void) {
     if (strncmp(request, get_prefix, sizeof(get_prefix)) != 0) goto end;
     char* path = request + sizeof(get_prefix);
 
-    {
-        char* path_end = strchr(path, ' ');
-        if (path_end == NULL) goto end;
-        *path_end = '\0';
-    }
+    char* path_end = strchr(path, ' ');
+    if (path_end == NULL) goto end;
+    *path_end = '\0';
 
     struct stat statbuf;
-    int file_descriptor = -1;
-    if ((file_descriptor = open(path, O_RDONLY)) != -1 && fstat(file_descriptor, &statbuf) != -1) send_file(file_descriptor, input->client_socket, statbuf.st_size);
-    else send_not_found(input->client_socket);
-    if (file_descriptor != -1) close(file_descriptor);
+    int result_descriptor = open_and_stat(path, &statbuf);
+    if (result_descriptor != -1) {
+        if (S_ISDIR(statbuf.st_mode)) {
+            close(result_descriptor);
+            memcpy(path_end, INDEX_POSTFIX, sizeof(INDEX_POSTFIX));
+            result_descriptor = open_and_stat(path, &statbuf);
+        }
+    }
+
+    if (result_descriptor == -1) send_not_found(input->client_socket);
+    else send_file(result_descriptor, input->client_socket, statbuf.st_size);
 
     end:
     close(input->client_socket);
