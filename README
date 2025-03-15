@@ -1,5 +1,4 @@
 "dum" is an extremely small file web server. Intentional issues:
-* No checks for ".." in paths, meaning that a visitor can access files outside of the directory where the server was started
 * No memory deallocation on exit
 * If something goes wrong during file operations, 404 is sent instead of 500
 

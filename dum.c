@@ -10,6 +10,7 @@
 #include <fcntl.h>
 #include <limits.h>
 #include <signal.h>
+#include <stdbool.h>
 
 const char* PORT = "80";
 
@@ -52,6 +53,34 @@ int open_and_stat(char* path, struct stat* statbuf) {
     return file_descriptor;
 }
 
+int check_for_dotdot(char* path) {
+    enum {
+        SAFE,
+        UNCERTAIN,
+        DOT,
+        DOTDOT,
+    } current_mark = UNCERTAIN;
+    for (;;) {
+        char current_char = *path;
+        if (current_char == '\0' || current_char == '/') {
+            if (current_mark == DOTDOT) return true;
+            if (current_char == '\0') return false;
+            current_mark = UNCERTAIN;
+        } else if (current_mark != SAFE) {
+            if (current_char == '.' && current_mark != DOTDOT) {
+                if (current_mark == UNCERTAIN) {
+                    current_mark = DOT;
+                } else if (current_mark == DOT) {
+                    current_mark = DOTDOT;
+                }
+            } else {
+                current_mark = SAFE;
+            }
+        }
+        ++path;
+    }
+}
+
 void* worker_thread(void* input_void) {
     struct WorkerInput* input = input_void;
 
@@ -68,6 +97,8 @@ void* worker_thread(void* input_void) {
     char* path_end = strchr(path, ' ');
     if (path_end == NULL) goto end;
     *path_end = '\0';
+
+    if (check_for_dotdot(path)) goto end;
 
     struct stat statbuf;
     int result_descriptor = open_and_stat(path, &statbuf);
@@ -96,6 +127,7 @@ void handle_signal(int signal) {
     _exit(0);
 }
 
+#ifndef DEBUG
 int main(void) {
     signal(SIGINT, handle_signal);
     signal(SIGTERM, handle_signal);
@@ -147,3 +179,23 @@ int main(void) {
 
     return 0;
 }
+#endif
+
+#ifdef DEBUG
+#define test(expected, string) printf("%d %d - %s\n", expected, check_for_dotdot(string), string)
+int main(void) {
+    test(0, "");
+    test(0, ".");
+    test(1, "..");
+    test(0, "...");
+    test(0, ".../");
+    test(0, ".../.");
+    test(1, ".../..");
+    test(0, ".../..blah");
+    test(0, ".../blah..");
+    test(1, "../blah..");
+    test(0, "/blah..//");
+    test(1, "/blah..//..");
+    return 0;
+}
+#endif
