@@ -59,12 +59,11 @@ void* worker_thread(void* input_void) {
     #define REQUEST_LINE_SIZE 512
     char request[REQUEST_LINE_SIZE + (sizeof(INDEX_POSTFIX) - 1) + sizeof('\0')];
     int bytes_read = read(input->client_socket, request, REQUEST_LINE_SIZE);
-    if (bytes_read <= 0) goto end;
+    if (bytes_read <= 4 /* not empty, not an error and has at least 4 for "GET." */) goto end;
     request[bytes_read] = '\0';
 
-    smallstring(get_prefix, "GET /");
-    if (strncmp(request, get_prefix, sizeof(get_prefix)) != 0) goto end;
-    char* path = request + sizeof(get_prefix);
+    char* path = request + 3;
+    *path = '.';
 
     char* path_end = strchr(path, ' ');
     if (path_end == NULL) goto end;
