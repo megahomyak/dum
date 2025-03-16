@@ -94,7 +94,13 @@ void* worker_thread(void* input_void) {
     char* path = request + 3;
     *path = '.';
 
-    char* path_end = strchr(path, ' ');
+    #define arrsize(arr) (sizeof(arr) / sizeof(arr[0]))
+    char ordered_endchars[] = {'?', '#', ' '};
+    char* path_end = NULL;
+    for (int i = 0; i < arrsize(ordered_endchars); ++i) {
+        path_end = strchr(path, ordered_endchars[i]);
+        if (path_end != NULL) break;
+    }
     if (path_end == NULL) goto end;
     *path_end = '\0';
 
