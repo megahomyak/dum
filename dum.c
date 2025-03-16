@@ -16,6 +16,7 @@ const char* PORT = "80";
 
 #define try(text, expr) if(expr != 0) die(text);
 #define smallstring(name, contents) const char name[sizeof(contents) / (sizeof(contents[0])) - 1] = contents
+#define write_smallstring(socket, string_contents) { smallstring(data, string_contents); ignore_failure(write(socket, data, sizeof(data))); }
 #define die(text) { perror(text); return 1; }
 #define ignore_failure(call) if (call == -1) { /* does not matter */ }
 
@@ -24,46 +25,42 @@ struct WorkerInput {
 };
 
 void send_not_found(int client_socket) {
-    smallstring(response,
+    write_smallstring(client_socket,
         "HTTP/1.1 404 Not Found\r\n"
         "\r\n"
         "404 Not Found"
     );
-    ignore_failure(write(client_socket, response, sizeof(response)));
 }
 
 void send_file(int file_descriptor, int client_socket, size_t file_size) {
-    smallstring(heading,
+    write_smallstring(client_socket,
         "HTTP/1.1 200 OK\r\n"
         "Cache-Control: max-age=31536000, public\r\n"
         "\r\n"
     );
-    ignore_failure(write(client_socket, heading, sizeof(heading)));
     ignore_failure(sendfile(client_socket, file_descriptor, /*offset=*/NULL, file_size));
 }
 
 void write_full_directory_url(char* path, char* after_path, char* url_end, int client_socket) {
     ignore_failure(write(client_socket, path, after_path - path));
-    smallstring(slash_after_directory,
+    write_smallstring(client_socket,
         "/"
     );
-    ignore_failure(write(client_socket, slash_after_directory, sizeof(slash_after_directory)));
     ignore_failure(write(client_socket, after_path, url_end - after_path));
 }
 
 void send_full_directory_redirect(char* path, char* after_path, char* url_end, int client_socket) {
-    smallstring(redirection,
+    write_smallstring(client_socket,
         "HTTP/1.1 308 Permanent Redirect\r\n"
         "Content-Type: text/html; charset=UTF-8\r\n"
         "Location: "
     );
-    ignore_failure(write(client_socket, redirection, sizeof(redirection)));
     write_full_directory_url(path, after_path, url_end, client_socket);
-    smallstring(after_location,
+    write_smallstring(client_socket,
+        "\r\n"
         "\r\n"
         "Available at "
     );
-    ignore_failure(write(client_socket, after_location, sizeof(after_location)));
     write_full_directory_url(path, after_path, url_end, client_socket);
 }
 
@@ -116,7 +113,7 @@ void* worker_thread(void* input_void) {
     if (bytes_read <= 4 /* not empty, not an error and has at least 4 for "GET." */) goto end;
     request[bytes_read] = '\0';
 
-    char* path = request + 3;
+    char* path = &request[3];
     *path = '.';
 
     char* url_end = strchr(path, ' ');
@@ -147,7 +144,7 @@ void* worker_thread(void* input_void) {
                 result_descriptor = open_and_stat(path, &statbuf);
             } else {
                 *after_path = after_path_char;
-                send_full_directory_redirect(path, after_path, url_end, input->client_socket);
+                send_full_directory_redirect(&path[1], after_path, url_end, input->client_socket);
                 goto end;
             }
         }
