@@ -199,12 +199,20 @@ int main(void) {
         if (client_socket == -1) continue;
 
         struct WorkerInput* input = malloc(sizeof(*input));
-        if (input == NULL) die("couldn't malloc");
-        input->client_socket = client_socket;
 
         pthread_t thread;
-        try("pthread_create", pthread_create(&thread, &thread_attributes, worker_thread, input));
-        try("pthread_detach", pthread_detach(thread));
+        if (input != NULL && pthread_create(&thread, &thread_attributes, worker_thread, input) == 0) {
+            input->client_socket = client_socket;
+            try("pthread_detach", pthread_detach(thread));
+        } else {
+            write_smallstring(client_socket,
+                "HTTP/1.1 503 Service Unavailable\r\n"
+                "\r\n"
+                "The service is overloaded. Please, try requesting again later"
+            );
+            close(input->client_socket);
+            free(input);
+        }
     }
 
     return 0;
