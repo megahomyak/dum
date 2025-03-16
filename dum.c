@@ -49,9 +49,7 @@ void send_full_directory_redirect(char* path, char* after_path, char* url_end, i
         "Location: "
     );
     ignore_failure(write(client_socket, path, after_path - path));
-    write_smallstring(client_socket,
-        "/"
-    );
+    write_smallstring(client_socket, "/");
     ignore_failure(write(client_socket, after_path, url_end - after_path));
     write_smallstring(client_socket, "\r\n\r\n");
 }
