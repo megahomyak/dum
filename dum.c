@@ -15,7 +15,7 @@
 const char* PORT = "80";
 
 #define try(text, expr) if(expr != 0) die(text);
-#define smallstring(name, contents) const char name[sizeof(contents) - 1] = contents
+#define smallstring(name, contents) const char name[sizeof(contents) / (sizeof(contents[0])) - 1] = contents
 #define die(text) { perror(text); return 1; }
 #define ignore_failure(call) if (call == -1) { /* does not matter */ }
 
@@ -40,6 +40,31 @@ void send_file(int file_descriptor, int client_socket, size_t file_size) {
     );
     ignore_failure(write(client_socket, heading, sizeof(heading)));
     ignore_failure(sendfile(client_socket, file_descriptor, /*offset=*/NULL, file_size));
+}
+
+void write_full_directory_url(char* path, char* after_path, char* url_end, int client_socket) {
+    ignore_failure(write(client_socket, path, after_path - path));
+    smallstring(slash_after_directory,
+        "/"
+    );
+    ignore_failure(write(client_socket, slash_after_directory, sizeof(slash_after_directory)));
+    ignore_failure(write(client_socket, after_path, url_end - after_path));
+}
+
+void send_full_directory_redirect(char* path, char* after_path, char* url_end, int client_socket) {
+    smallstring(redirection,
+        "HTTP/1.1 308 Permanent Redirect\r\n"
+        "Content-Type: text/html; charset=UTF-8\r\n"
+        "Location: "
+    );
+    ignore_failure(write(client_socket, redirection, sizeof(redirection)));
+    write_full_directory_url(path, after_path, url_end, client_socket);
+    smallstring(after_location,
+        "\r\n"
+        "Available at "
+    );
+    ignore_failure(write(client_socket, after_location, sizeof(after_location)));
+    write_full_directory_url(path, after_path, url_end, client_socket);
 }
 
 int open_and_stat(char* path, struct stat* statbuf) {
@@ -84,7 +109,7 @@ int check_for_dotdot(char* path) {
 void* worker_thread(void* input_void) {
     struct WorkerInput* input = input_void;
 
-    #define INDEX_POSTFIX "/index.html"
+    #define INDEX_POSTFIX "index.html"
     #define REQUEST_LINE_SIZE 512
     char request[REQUEST_LINE_SIZE + (sizeof(INDEX_POSTFIX) - 1) + sizeof('\0')];
     int bytes_read = read(input->client_socket, request, REQUEST_LINE_SIZE);
@@ -94,15 +119,21 @@ void* worker_thread(void* input_void) {
     char* path = request + 3;
     *path = '.';
 
-    #define arrsize(arr) (sizeof(arr) / sizeof(arr[0]))
-    char ordered_endchars[] = {'?', '#', ' '};
-    char* path_end = NULL;
-    for (int i = 0; i < arrsize(ordered_endchars); ++i) {
-        path_end = strchr(path, ordered_endchars[i]);
-        if (path_end != NULL) break;
+    char* url_end = strchr(path, ' ');
+    if (url_end == NULL) goto end;
+    *url_end = '\0';
+
+    char after_path_char = '\0';
+    char* after_path = strchr(path, '?');
+    if (after_path != NULL) {
+        after_path_char = '?';
+        *after_path = '\0';
     }
-    if (path_end == NULL) goto end;
-    *path_end = '\0';
+    else if ((after_path = strchr(path, '#')) != NULL) {
+        after_path_char = '#';
+        *after_path = '\0';
+    }
+    else after_path = url_end;
 
     if (check_for_dotdot(path)) goto end;
 
@@ -111,8 +142,14 @@ void* worker_thread(void* input_void) {
     if (result_descriptor != -1) {
         if (S_ISDIR(statbuf.st_mode)) {
             close(result_descriptor);
-            memcpy(path_end, INDEX_POSTFIX, sizeof(INDEX_POSTFIX));
-            result_descriptor = open_and_stat(path, &statbuf);
+            if (url_end[-1] == '/') {
+                memcpy(url_end, INDEX_POSTFIX, sizeof(INDEX_POSTFIX));
+                result_descriptor = open_and_stat(path, &statbuf);
+            } else {
+                *after_path = after_path_char;
+                send_full_directory_redirect(path, after_path, url_end, input->client_socket);
+                goto end;
+            }
         }
     }
 
