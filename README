@@ -2,4 +2,4 @@
 * No memory deallocation on exit
 * If something goes wrong during file operations, 404 is sent instead of 500
 
-PLEASE BE FUCKING AWARE THAT THIS IS NOT FOR PRODUCTION, THIS IS NOT FOR YOU, THIS IS NOT FOR YOUR MOTHER, THIS IS FOR *ME*. THE CODE MIGHT BE A PIECE OF NON-PRODUCTION-READY TURD AND I'M *AWARE* OF IT; IF YOU DON'T LIKE SOMETHING, CONSIDER SHUTTING DOWN YOUR PC
+Available on Docker Hub: https://hub.docker.com/r/megahomyak/dum/tags
