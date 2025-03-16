@@ -1,4 +1,3 @@
-#include <linux/stat.h>
 #include <stdio.h>
 #include <string.h>
 #include <netdb.h>
@@ -13,7 +12,7 @@
 #include <signal.h>
 #include <stdbool.h>
 
-const char* PORT = "8000";
+const char* PORT = "80";
 
 #define try(text, expr) if(expr != 0) die(text);
 #define smallstring(name, contents) const char name[sizeof(contents) / (sizeof(contents[0])) - 1] = contents
@@ -43,27 +42,18 @@ void send_file(int file_descriptor, int client_socket, size_t file_size) {
     ignore_failure(sendfile(client_socket, file_descriptor, /*offset=*/NULL, file_size));
 }
 
-void write_full_directory_url(char* path, char* after_path, char* url_end, int client_socket) {
-    ignore_failure(write(client_socket, path, after_path - path));
-    write_smallstring(client_socket,
-        "/"
-    );
-    ignore_failure(write(client_socket, after_path, url_end - after_path));
-}
-
 void send_full_directory_redirect(char* path, char* after_path, char* url_end, int client_socket) {
     write_smallstring(client_socket,
         "HTTP/1.1 308 Permanent Redirect\r\n"
         "Content-Type: text/html; charset=UTF-8\r\n"
         "Location: "
     );
-    write_full_directory_url(path, after_path, url_end, client_socket);
+    ignore_failure(write(client_socket, path, after_path - path));
     write_smallstring(client_socket,
-        "\r\n"
-        "\r\n"
-        "Available at "
+        "/"
     );
-    write_full_directory_url(path, after_path, url_end, client_socket);
+    ignore_failure(write(client_socket, after_path, url_end - after_path));
+    write_smallstring(client_socket, "\r\n\r\n");
 }
 
 int open_and_stat(char* path, struct stat* statbuf) {
@@ -139,15 +129,11 @@ void* worker_thread(void* input_void) {
     struct stat statbuf;
     int result_descriptor = open_and_stat(path, &statbuf);
     if (result_descriptor != -1) {
-        printf("%d\n", S_ISDIR(statbuf.st_mode));
         if (S_ISDIR(statbuf.st_mode)) {
-            printf("2\n"); fflush(stdout);
             close(result_descriptor);
             if (after_path[-1] == '/') {
-                memcpy(url_end, INDEX_POSTFIX, sizeof(INDEX_POSTFIX));
-                printf("%s\n", path); fflush(stdout);
+                memcpy(after_path, INDEX_POSTFIX, sizeof(INDEX_POSTFIX));
                 result_descriptor = open_and_stat(path, &statbuf);
-                printf("%d\n", result_descriptor); fflush(stdout);
             } else {
                 *after_path = after_path_char;
                 send_full_directory_redirect(&path[1], after_path, url_end, input->client_socket);
@@ -156,7 +142,6 @@ void* worker_thread(void* input_void) {
         }
     }
 
-    debug_print("ttt");
     if (result_descriptor == -1) send_not_found(input->client_socket);
     else {
         send_file(result_descriptor, input->client_socket, statbuf.st_size);
@@ -229,7 +214,7 @@ int main(void) {
 #endif
 
 #ifdef DEBUG
-#define test(expected, string) printf("%d %d - %s\n", expected, check_for_dotdot(string), string)
+#define test(expected, string) debug_print("%d %d - %s\n", expected, check_for_dotdot(string), string)
 int main(void) {
     test(0, "");
     test(0, ".");
