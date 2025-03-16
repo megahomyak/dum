@@ -1,3 +1,4 @@
+#include <linux/stat.h>
 #include <stdio.h>
 #include <string.h>
 #include <netdb.h>
@@ -12,13 +13,14 @@
 #include <signal.h>
 #include <stdbool.h>
 
-const char* PORT = "80";
+const char* PORT = "8000";
 
 #define try(text, expr) if(expr != 0) die(text);
 #define smallstring(name, contents) const char name[sizeof(contents) / (sizeof(contents[0])) - 1] = contents
 #define write_smallstring(socket, string_contents) { smallstring(data, string_contents); ignore_failure(write(socket, data, sizeof(data))); }
 #define die(text) { perror(text); return 1; }
 #define ignore_failure(call) if (call == -1) { /* does not matter */ }
+#define debug_print(...) { printf(__VA_ARGS__); fflush(stdout); }
 
 struct WorkerInput {
     int client_socket;
@@ -137,11 +139,15 @@ void* worker_thread(void* input_void) {
     struct stat statbuf;
     int result_descriptor = open_and_stat(path, &statbuf);
     if (result_descriptor != -1) {
+        printf("%d\n", S_ISDIR(statbuf.st_mode));
         if (S_ISDIR(statbuf.st_mode)) {
+            printf("2\n"); fflush(stdout);
             close(result_descriptor);
-            if (url_end[-1] == '/') {
+            if (after_path[-1] == '/') {
                 memcpy(url_end, INDEX_POSTFIX, sizeof(INDEX_POSTFIX));
+                printf("%s\n", path); fflush(stdout);
                 result_descriptor = open_and_stat(path, &statbuf);
+                printf("%d\n", result_descriptor); fflush(stdout);
             } else {
                 *after_path = after_path_char;
                 send_full_directory_redirect(&path[1], after_path, url_end, input->client_socket);
@@ -150,6 +156,7 @@ void* worker_thread(void* input_void) {
         }
     }
 
+    debug_print("ttt");
     if (result_descriptor == -1) send_not_found(input->client_socket);
     else {
         send_file(result_descriptor, input->client_socket, statbuf.st_size);
