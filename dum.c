@@ -45,12 +45,6 @@ void send_file(int file_descriptor, int client_socket, size_t file_size, struct 
         "Cache-Control: max-age=31536000, public\r\n"
         "Content-Type: "
     );
-    debug_print("len: %lu\n", mime.length);
-    debug_print("entering loop\n");
-    for (int i = 0; i < mime.length; ++i) {
-        debug_print("%d - ", mime.name[i]);
-    }
-    debug_print("exiting loop\n");
     ignore_failure(write(client_socket, mime.name, mime.length));
     write_smallstring(client_socket, "\r\n\r\n");
     ignore_failure(sendfile(client_socket, file_descriptor, /*offset=*/NULL, file_size));
@@ -118,7 +112,7 @@ bool check_for_dotdot(char* path) {
 #define set_mime_type(mime_str) { \
     smallstring(mime_array, mime_str); \
     mime.name = mime_array; \
-    mime.length = sizeof(mime_array);debug_print("D %lu\n", sizeof(mime_array)); \
+    mime.length = sizeof(mime_array); \
 }
 #define check_ending_macro(ending_str, mime_str) { \
     smallstring(ending_array, ending_str); \
@@ -189,7 +183,6 @@ void* worker_thread(void* input_void) {
     else {
         char* path_end = after_path - 1;
         struct MimeType mime;
-        debug_print("456");
         check_ending_macro(".aac", "audio/aac");
         check_ending_macro(".abw", "application/x-abiword");
         check_ending_macro(".apng", "image/apng");
@@ -267,7 +260,6 @@ void* worker_thread(void* input_void) {
         check_ending_macro(".3gp", "video/3gpp");
         check_ending_macro(".3g2", "video/3gpp");
         check_ending_macro(".7z", "application/x-7z-compressed");
-        debug_print("123");
         set_mime_type("application/octet-stream");
         send_file:
         send_file(result_descriptor, input->client_socket, statbuf.st_size, mime);
