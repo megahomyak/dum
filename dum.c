@@ -12,7 +12,7 @@
 #include <signal.h>
 #include <stdbool.h>
 
-const char* PORT = "8000";
+const char* PORT = "80";
 
 #define try(text, expr) if(expr != 0) die(text);
 #define smallstring(name, contents) const char name[sizeof(contents) / (sizeof(*contents)) - 1] = contents
