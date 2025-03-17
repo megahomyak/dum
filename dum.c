@@ -25,6 +25,15 @@ struct WorkerInput {
     int client_socket;
 };
 
+void send_overloaded(int client_socket) {
+    write_smallstring(client_socket,
+        "HTTP/1.1 503 Service Unavailable\r\n"
+        "Content-Type: text/plain; charset=UTF-8\r\n"
+        "\r\n"
+        "The service is overloaded. Please, try requesting again later"
+    );
+}
+
 void send_not_found(int client_socket) {
     write_smallstring(client_socket,
         "HTTP/1.1 404 Not Found\r\n"
@@ -324,11 +333,7 @@ int main(void) {
             input->client_socket = client_socket;
             try("pthread_detach", pthread_detach(thread));
         } else {
-            write_smallstring(client_socket,
-                "HTTP/1.1 503 Service Unavailable\r\n"
-                "\r\n"
-                "The service is overloaded. Please, try requesting again later"
-            );
+            send_overloaded(client_socket);
             close(input->client_socket);
             free(input);
         }
