@@ -110,12 +110,12 @@ bool check_for_dotdot(char* path) {
 }
 
 #define set_mime_type(mime_expr) { \
-    smallstring(mime_array, #mime_expr); \
+    smallstring(mime_array, mime_expr); \
     mime.name = mime_array; \
     mime.length = sizeof(mime_array); \
 }
 #define check_ending_macro(ending_expr, mime_expr) { \
-    smallstring(ending_array, #ending_expr); \
+    smallstring(ending_array, ending_expr); \
     if (check_ending(path, path_end, ending_array, ending_array + sizeof(ending_array) - 1)) { \
         set_mime_type(mime_expr); \
         goto send_file; \
@@ -183,84 +183,84 @@ void* worker_thread(void* input_void) {
     else {
         char* path_end = after_path - 1;
         struct MimeType mime;
-        check_ending_macro(.aac, audio/aac);
-        check_ending_macro(.abw, application/x-abiword);
-        check_ending_macro(.apng, image/apng);
-        check_ending_macro(.arc, application/x-freearc);
-        check_ending_macro(.avif, image/avif);
-        check_ending_macro(.avi, video/x-msvideo);
-        check_ending_macro(.azw, application/vnd.amazon.ebook);
-        check_ending_macro(.bin, application/octet-stream);
-        check_ending_macro(.bmp, image/bmp);
-        check_ending_macro(.bz, application/x-bzip);
-        check_ending_macro(.bz2, application/x-bzip2);
-        check_ending_macro(.cda, application/x-cdf);
-        check_ending_macro(.csh, application/x-csh);
-        check_ending_macro(.css, text/css);
-        check_ending_macro(.csv, text/csv);
-        check_ending_macro(.doc, application/msword);
-        check_ending_macro(.docx, application/vnd.openxmlformats-officedocument.wordprocessingml.document);
-        check_ending_macro(.eot, application/vnd.ms-fontobject);
-        check_ending_macro(.epub, application/epub+zip);
-        check_ending_macro(.gz, application/gzip);
-        check_ending_macro(.gif, image/gif);
-        check_ending_macro(.htm, text/html);
-        check_ending_macro(.html, text/html);
-        check_ending_macro(.ico, image/vnd.microsoft.icon);
-        check_ending_macro(.ics, text/calendar);
-        check_ending_macro(.jar, application/java-archive);
-        check_ending_macro(.jpeg, image/jpeg);
-        check_ending_macro(.jpg, image/jpeg);
-        check_ending_macro(.js, text/javascript);
-        check_ending_macro(.json, application/json);
-        check_ending_macro(.jsonld, application/ld+json);
-        check_ending_macro(.mid, audio/x-midi);
-        check_ending_macro(.midi, audio/x-midi);
-        check_ending_macro(.mjs, text/javascript);
-        check_ending_macro(.mp3, audio/mpeg);
-        check_ending_macro(.mp4, video/mp4);
-        check_ending_macro(.mpeg, video/mpeg);
-        check_ending_macro(.mpkg, application/vnd.apple.installer+xml);
-        check_ending_macro(.odp, application/vnd.oasis.opendocument.presentation);
-        check_ending_macro(.ods, application/vnd.oasis.opendocument.spreadsheet);
-        check_ending_macro(.odt, application/vnd.oasis.opendocument.text);
-        check_ending_macro(.oga, audio/ogg);
-        check_ending_macro(.ogv, video/ogg);
-        check_ending_macro(.ogx, application/ogg);
-        check_ending_macro(.opus, audio/ogg);
-        check_ending_macro(.otf, font/otf);
-        check_ending_macro(.png, image/png);
-        check_ending_macro(.pdf, application/pdf);
-        check_ending_macro(.php, application/x-httpd-php);
-        check_ending_macro(.ppt, application/vnd.ms-powerpoint);
-        check_ending_macro(.pptx, application/vnd.openxmlformats-officedocument.presentationml.presentation);
-        check_ending_macro(.rar, application/vnd.rar);
-        check_ending_macro(.rtf, application/rtf);
-        check_ending_macro(.sh, application/x-sh);
-        check_ending_macro(.svg, image/svg+xml);
-        check_ending_macro(.tar, application/x-tar);
-        check_ending_macro(.tif, image/tiff);
-        check_ending_macro(.tiff, image/tiff);
-        check_ending_macro(.ts, video/mp2t);
-        check_ending_macro(.ttf, font/ttf);
-        check_ending_macro(.txt, text/plain);
-        check_ending_macro(.vsd, application/vnd.visio);
-        check_ending_macro(.wav, audio/wav);
-        check_ending_macro(.weba, audio/webm);
-        check_ending_macro(.webm, video/webm);
-        check_ending_macro(.webp, image/webp);
-        check_ending_macro(.woff, font/woff);
-        check_ending_macro(.woff2, font/woff2);
-        check_ending_macro(.xhtml, application/xhtml+xml);
-        check_ending_macro(.xls, application/vnd.ms-excel);
-        check_ending_macro(.xlsx, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet);
-        check_ending_macro(.xml, application/xml);
-        check_ending_macro(.xul, application/vnd.mozilla.xul+xml);
-        check_ending_macro(.zip, application/x-zip-compressed.);
-        check_ending_macro(.3gp, video/3gpp);
-        check_ending_macro(.3g2, video/3gpp);
-        check_ending_macro(.7z, application/x-7z-compressed);
-        set_mime_type(application/octet-stream);
+        check_ending_macro(".aac", "audio/aac");
+        check_ending_macro(".abw", "application/x-abiword");
+        check_ending_macro(".apng", "image/apng");
+        check_ending_macro(".arc", "application/x-freearc");
+        check_ending_macro(".avif", "image/avif");
+        check_ending_macro(".avi", "video/x-msvideo");
+        check_ending_macro(".azw", "application/vnd.amazon.ebook");
+        check_ending_macro(".bin", "application/octet-stream");
+        check_ending_macro(".bmp", "image/bmp");
+        check_ending_macro(".bz", "application/x-bzip");
+        check_ending_macro(".bz2", "application/x-bzip2");
+        check_ending_macro(".cda", "application/x-cdf");
+        check_ending_macro(".csh", "application/x-csh");
+        check_ending_macro(".css", "text/css");
+        check_ending_macro(".csv", "text/csv");
+        check_ending_macro(".doc", "application/msword");
+        check_ending_macro(".docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+        check_ending_macro(".eot", "application/vnd.ms-fontobject");
+        check_ending_macro(".epub", "application/epub+zip");
+        check_ending_macro(".gz", "application/gzip");
+        check_ending_macro(".gif", "image/gif");
+        check_ending_macro(".htm", "text/html");
+        check_ending_macro(".html", "text/html");
+        check_ending_macro(".ico", "image/vnd.microsoft.icon");
+        check_ending_macro(".ics", "text/calendar");
+        check_ending_macro(".jar", "application/java-archive");
+        check_ending_macro(".jpeg", "image/jpeg");
+        check_ending_macro(".jpg", "image/jpeg");
+        check_ending_macro(".js", "text/javascript");
+        check_ending_macro(".json", "application/json");
+        check_ending_macro(".jsonld", "application/ld+json");
+        check_ending_macro(".mid", "audio/x-midi");
+        check_ending_macro(".midi", "audio/x-midi");
+        check_ending_macro(".mjs", "text/javascript");
+        check_ending_macro(".mp3", "audio/mpeg");
+        check_ending_macro(".mp4", "video/mp4");
+        check_ending_macro(".mpeg", "video/mpeg");
+        check_ending_macro(".mpkg", "application/vnd.apple.installer+xml");
+        check_ending_macro(".odp", "application/vnd.oasis.opendocument.presentation");
+        check_ending_macro(".ods", "application/vnd.oasis.opendocument.spreadsheet");
+        check_ending_macro(".odt", "application/vnd.oasis.opendocument.text");
+        check_ending_macro(".oga", "audio/ogg");
+        check_ending_macro(".ogv", "video/ogg");
+        check_ending_macro(".ogx", "application/ogg");
+        check_ending_macro(".opus", "audio/ogg");
+        check_ending_macro(".otf", "font/otf");
+        check_ending_macro(".png", "image/png");
+        check_ending_macro(".pdf", "application/pdf");
+        check_ending_macro(".php", "application/x-httpd-php");
+        check_ending_macro(".ppt", "application/vnd.ms-powerpoint");
+        check_ending_macro(".pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
+        check_ending_macro(".rar", "application/vnd.rar");
+        check_ending_macro(".rtf", "application/rtf");
+        check_ending_macro(".sh", "application/x-sh");
+        check_ending_macro(".svg", "image/svg+xml");
+        check_ending_macro(".tar", "application/x-tar");
+        check_ending_macro(".tif", "image/tiff");
+        check_ending_macro(".tiff", "image/tiff");
+        check_ending_macro(".ts", "video/mp2t");
+        check_ending_macro(".ttf", "font/ttf");
+        check_ending_macro(".txt", "text/plain");
+        check_ending_macro(".vsd", "application/vnd.visio");
+        check_ending_macro(".wav", "audio/wav");
+        check_ending_macro(".weba", "audio/webm");
+        check_ending_macro(".webm", "video/webm");
+        check_ending_macro(".webp", "image/webp");
+        check_ending_macro(".woff", "font/woff");
+        check_ending_macro(".woff2", "font/woff2");
+        check_ending_macro(".xhtml", "application/xhtml+xml");
+        check_ending_macro(".xls", "application/vnd.ms-excel");
+        check_ending_macro(".xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        check_ending_macro(".xml", "application/xml");
+        check_ending_macro(".xul", "application/vnd.mozilla.xul+xml");
+        check_ending_macro(".zip", "application/x-zip-compressed.");
+        check_ending_macro(".3gp", "video/3gpp");
+        check_ending_macro(".3g2", "video/3gpp");
+        check_ending_macro(".7z", "application/x-7z-compressed");
+        set_mime_type("application/octet-stream");
         send_file:
         send_file(result_descriptor, input->client_socket, statbuf.st_size, mime);
         close(result_descriptor);
