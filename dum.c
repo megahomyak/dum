@@ -109,15 +109,15 @@ bool check_for_dotdot(char* path) {
     }
 }
 
-#define set_mime_type(mime_expr) { \
-    smallstring(mime_array, mime_expr); \
+#define set_mime_type(mime_str) { \
+    smallstring(mime_array, mime_str); \
     mime.name = mime_array; \
     mime.length = sizeof(mime_array); \
 }
-#define check_ending_macro(ending_expr, mime_expr) { \
-    smallstring(ending_array, ending_expr); \
+#define check_ending_macro(ending_str, mime_str) { \
+    smallstring(ending_array, ending_str); \
     if (check_ending(path, path_end, ending_array, ending_array + sizeof(ending_array) - 1)) { \
-        set_mime_type(mime_expr); \
+        set_mime_type(mime_str); \
         goto send_file; \
     } \
 }
@@ -196,27 +196,27 @@ void* worker_thread(void* input_void) {
         check_ending_macro(".bz2", "application/x-bzip2");
         check_ending_macro(".cda", "application/x-cdf");
         check_ending_macro(".csh", "application/x-csh");
-        check_ending_macro(".css", "text/css");
-        check_ending_macro(".csv", "text/csv");
+        check_ending_macro(".css", "text/css; charset=UTF-8");
+        check_ending_macro(".csv", "text/csv; charset=UTF-8");
         check_ending_macro(".doc", "application/msword");
         check_ending_macro(".docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
         check_ending_macro(".eot", "application/vnd.ms-fontobject");
         check_ending_macro(".epub", "application/epub+zip");
         check_ending_macro(".gz", "application/gzip");
         check_ending_macro(".gif", "image/gif");
-        check_ending_macro(".htm", "text/html");
-        check_ending_macro(".html", "text/html");
+        check_ending_macro(".htm", "text/html; charset=UTF-8");
+        check_ending_macro(".html", "text/html; charset=UTF-8");
         check_ending_macro(".ico", "image/vnd.microsoft.icon");
-        check_ending_macro(".ics", "text/calendar");
+        check_ending_macro(".ics", "text/calendar; charset=UTF-8");
         check_ending_macro(".jar", "application/java-archive");
         check_ending_macro(".jpeg", "image/jpeg");
         check_ending_macro(".jpg", "image/jpeg");
-        check_ending_macro(".js", "text/javascript");
+        check_ending_macro(".js", "text/javascript; charset=UTF-8");
         check_ending_macro(".json", "application/json");
         check_ending_macro(".jsonld", "application/ld+json");
         check_ending_macro(".mid", "audio/x-midi");
         check_ending_macro(".midi", "audio/x-midi");
-        check_ending_macro(".mjs", "text/javascript");
+        check_ending_macro(".mjs", "text/javascript; charset=UTF-8");
         check_ending_macro(".mp3", "audio/mpeg");
         check_ending_macro(".mp4", "video/mp4");
         check_ending_macro(".mpeg", "video/mpeg");
@@ -243,7 +243,7 @@ void* worker_thread(void* input_void) {
         check_ending_macro(".tiff", "image/tiff");
         check_ending_macro(".ts", "video/mp2t");
         check_ending_macro(".ttf", "font/ttf");
-        check_ending_macro(".txt", "text/plain");
+        check_ending_macro(".txt", "text/plain; charset=UTF-8");
         check_ending_macro(".vsd", "application/vnd.visio");
         check_ending_macro(".wav", "audio/wav");
         check_ending_macro(".weba", "audio/webm");
