@@ -12,14 +12,21 @@
 #include <signal.h>
 #include <stdbool.h>
 
-const char* PORT = "80";
+const char* PORT = "8000";
 
 #define try(text, expr) if(expr != 0) die(text);
 #define smallstring(name, contents) const char name[sizeof(contents) / (sizeof(contents[0])) - 1] = contents
 #define write_smallstring(socket, string_contents) { smallstring(data, string_contents); ignore_failure(write(socket, data, sizeof(data))); }
 #define die(text) { perror(text); return 1; }
 #define ignore_failure(call) if (call == -1) { /* does not matter */ }
+
+#define DEBUG
+
+#ifdef DEBUG
 #define debug_print(...) { printf(__VA_ARGS__); fflush(stdout); }
+#else
+#define debug_print(...)
+#endif
 
 struct WorkerInput {
     int client_socket;
@@ -28,30 +35,46 @@ struct WorkerInput {
 void send_not_found(int client_socket) {
     write_smallstring(client_socket,
         "HTTP/1.1 404 Not Found\r\n"
+        "Content-Type: text/plain; charset=UTF-8\r\n"
         "\r\n"
         "404 Not Found"
     );
 }
 
-void send_file(int file_descriptor, int client_socket, size_t file_size) {
+struct MimeType {
+    const char* name;
+    size_t length;
+};
+
+void send_file(int file_descriptor, int client_socket, size_t file_size, struct MimeType mime) {
     write_smallstring(client_socket,
         "HTTP/1.1 200 OK\r\n"
         "Cache-Control: max-age=31536000, public\r\n"
-        "\r\n"
+        "Content-Type: "
     );
+    ignore_failure(write(client_socket, mime.name, mime.length));
+    write_smallstring(client_socket, "\r\n\r\n");
     ignore_failure(sendfile(client_socket, file_descriptor, /*offset=*/NULL, file_size));
+}
+
+void write_full_directory(char* path, char* after_path, char* url_end, int client_socket) {
+    ignore_failure(write(client_socket, path, after_path - path));
+    write_smallstring(client_socket, "/");
+    ignore_failure(write(client_socket, after_path, url_end - after_path));
 }
 
 void send_full_directory_redirect(char* path, char* after_path, char* url_end, int client_socket) {
     write_smallstring(client_socket,
         "HTTP/1.1 308 Permanent Redirect\r\n"
-        "Content-Type: text/html; charset=UTF-8\r\n"
+        "Content-Type: text/plain; charset=UTF-8\r\n"
         "Location: "
     );
-    ignore_failure(write(client_socket, path, after_path - path));
-    write_smallstring(client_socket, "/");
-    ignore_failure(write(client_socket, after_path, url_end - after_path));
-    write_smallstring(client_socket, "\r\n\r\n");
+    write_full_directory(path, after_path, url_end, client_socket);
+    write_smallstring(client_socket,
+        "\r\n\r\n"
+        "Redirect to "
+    );
+    write_full_directory(path, after_path, url_end, client_socket);
 }
 
 int open_and_stat(char* path, struct stat* statbuf) {
@@ -65,7 +88,7 @@ int open_and_stat(char* path, struct stat* statbuf) {
     return file_descriptor;
 }
 
-int check_for_dotdot(char* path) {
+bool check_for_dotdot(char* path) {
     enum {
         SAFE,
         UNCERTAIN,
@@ -90,6 +113,39 @@ int check_for_dotdot(char* path) {
             }
         }
         ++path;
+    }
+}
+
+#define set_mime_type(mime_expr) { \
+    smallstring(mime_array, #mime_expr); \
+    mime.name = mime_array; \
+    mime.length = sizeof(mime_array); \
+}
+#define check_ending_macro(ending_expr, mime_expr) { \
+    smallstring(ending_array, #ending_expr); \
+    if (check_ending(path, path_end, ending_array, ending_array + sizeof(ending_array) - 1)) { \
+        debug_print("%s recognized\n", #ending_expr); \
+        set_mime_type(mime_str); \
+        goto send_file; \
+    } \
+}
+bool check_ending(char* path_beginning, char* path_end, const char* ending_beginning, const char* ending_end) {
+    for (;;) {
+        debug_print("path_end = %s\n", path_end);
+        #ifdef DEBUG
+        debug_print("ending_beginning = ");
+        for (const char* ending_beginning2 = ending_beginning;;) {
+            debug_print("%c", *ending_beginning2);
+            if (ending_beginning2 == ending_end) break;
+            ++ending_beginning2;
+        }
+        debug_print("\n");
+        #endif
+        if (*path_end != *ending_end) return false;
+        if (ending_beginning == ending_end) return true;
+        if (path_beginning == path_end) return false;
+        --ending_end;
+        --path_end;
     }
 }
 
@@ -142,7 +198,90 @@ void* worker_thread(void* input_void) {
 
     if (result_descriptor == -1) send_not_found(input->client_socket);
     else {
-        send_file(result_descriptor, input->client_socket, statbuf.st_size);
+        char* path_end = after_path - 1;
+        struct MimeType mime;
+        debug_print("%s\n", path);
+        check_ending_macro(.aac, audio/aac);
+        check_ending_macro(.abw, application/x-abiword);
+        check_ending_macro(.apng, image/apng);
+        check_ending_macro(.arc, application/x-freearc);
+        check_ending_macro(.avif, image/avif);
+        check_ending_macro(.avi, video/x-msvideo);
+        check_ending_macro(.azw, application/vnd.amazon.ebook);
+        check_ending_macro(.bin, application/octet-stream);
+        check_ending_macro(.bmp, image/bmp);
+        check_ending_macro(.bz, application/x-bzip);
+        check_ending_macro(.bz2, application/x-bzip2);
+        check_ending_macro(.cda, application/x-cdf);
+        check_ending_macro(.csh, application/x-csh);
+        check_ending_macro(.css, text/css);
+        check_ending_macro(.csv, text/csv);
+        check_ending_macro(.doc, application/msword);
+        check_ending_macro(.docx, application/vnd.openxmlformats-officedocument.wordprocessingml.document);
+        check_ending_macro(.eot, application/vnd.ms-fontobject);
+        check_ending_macro(.epub, application/epub+zip);
+        check_ending_macro(.gz, application/gzip);
+        check_ending_macro(.gif, image/gif);
+        check_ending_macro(.htm, text/html);
+        check_ending_macro(.html, text/html);
+        check_ending_macro(.ico, image/vnd.microsoft.icon);
+        check_ending_macro(.ics, text/calendar);
+        check_ending_macro(.jar, application/java-archive);
+        check_ending_macro(.jpeg, image/jpeg);
+        check_ending_macro(.jpg, image/jpeg);
+        check_ending_macro(.js, text/javascript);
+        check_ending_macro(.json, application/json);
+        check_ending_macro(.jsonld, application/ld+json);
+        check_ending_macro(.mid, audio/x-midi);
+        check_ending_macro(.midi, audio/x-midi);
+        check_ending_macro(.mjs, text/javascript);
+        check_ending_macro(.mp3, audio/mpeg);
+        check_ending_macro(.mp4, video/mp4);
+        check_ending_macro(.mpeg, video/mpeg);
+        check_ending_macro(.mpkg, application/vnd.apple.installer+xml);
+        check_ending_macro(.odp, application/vnd.oasis.opendocument.presentation);
+        check_ending_macro(.ods, application/vnd.oasis.opendocument.spreadsheet);
+        check_ending_macro(.odt, application/vnd.oasis.opendocument.text);
+        check_ending_macro(.oga, audio/ogg);
+        check_ending_macro(.ogv, video/ogg);
+        check_ending_macro(.ogx, application/ogg);
+        check_ending_macro(.opus, audio/ogg);
+        check_ending_macro(.otf, font/otf);
+        check_ending_macro(.png, image/png);
+        check_ending_macro(.pdf, application/pdf);
+        check_ending_macro(.php, application/x-httpd-php);
+        check_ending_macro(.ppt, application/vnd.ms-powerpoint);
+        check_ending_macro(.pptx, application/vnd.openxmlformats-officedocument.presentationml.presentation);
+        check_ending_macro(.rar, application/vnd.rar);
+        check_ending_macro(.rtf, application/rtf);
+        check_ending_macro(.sh, application/x-sh);
+        check_ending_macro(.svg, image/svg+xml);
+        check_ending_macro(.tar, application/x-tar);
+        check_ending_macro(.tif, image/tiff);
+        check_ending_macro(.tiff, image/tiff);
+        check_ending_macro(.ts, video/mp2t);
+        check_ending_macro(.ttf, font/ttf);
+        check_ending_macro(.txt, text/plain);
+        check_ending_macro(.vsd, application/vnd.visio);
+        check_ending_macro(.wav, audio/wav);
+        check_ending_macro(.weba, audio/webm);
+        check_ending_macro(.webm, video/webm);
+        check_ending_macro(.webp, image/webp);
+        check_ending_macro(.woff, font/woff);
+        check_ending_macro(.woff2, font/woff2);
+        check_ending_macro(.xhtml, application/xhtml+xml);
+        check_ending_macro(.xls, application/vnd.ms-excel);
+        check_ending_macro(.xlsx, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet);
+        check_ending_macro(.xml, application/xml);
+        check_ending_macro(.xul, application/vnd.mozilla.xul+xml);
+        check_ending_macro(.zip, application/x-zip-compressed.);
+        check_ending_macro(.3gp, video/3gpp);
+        check_ending_macro(.3g2, video/3gpp);
+        check_ending_macro(.7z, application/x-7z-compressed);
+        set_mime_type(application/octet-stream);
+        send_file:
+        debug_print("%lu\n", mime.length);
+        send_file(result_descriptor, input->client_socket, statbuf.st_size, mime);
         close(result_descriptor);
     }
 
@@ -157,8 +296,28 @@ void handle_signal(int signal) {
     _exit(0);
 }
 
-#ifndef DEBUG
+#ifdef DEBUG
+#define test(expected, string) debug_print("%d %d - %s\n", expected, check_for_dotdot(string), string)
+void run_tests(void) {
+    test(0, "");
+    test(0, ".");
+    test(1, "..");
+    test(0, "...");
+    test(0, ".../");
+    test(0, ".../.");
+    test(1, ".../..");
+    test(0, ".../..blah");
+    test(0, ".../blah..");
+    test(1, "../blah..");
+    test(0, "/blah..//");
+    test(1, "/blah..//..");
+}
+#endif
+
 int main(void) {
+    #ifdef DEBUG
+    run_tests();
+    #endif
     signal(SIGINT, handle_signal);
     signal(SIGTERM, handle_signal);
 
@@ -217,23 +376,3 @@ int main(void) {
 
     return 0;
 }
-#endif
-
-#ifdef DEBUG
-#define test(expected, string) debug_print("%d %d - %s\n", expected, check_for_dotdot(string), string)
-int main(void) {
-    test(0, "");
-    test(0, ".");
-    test(1, "..");
-    test(0, "...");
-    test(0, ".../");
-    test(0, ".../.");
-    test(1, ".../..");
-    test(0, ".../..blah");
-    test(0, ".../blah..");
-    test(1, "../blah..");
-    test(0, "/blah..//");
-    test(1, "/blah..//..");
-    return 0;
-}
-#endif
