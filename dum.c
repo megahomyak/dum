@@ -19,14 +19,7 @@ const char* PORT = "8000";
 #define write_smallstring(socket, string_contents) { smallstring(data, string_contents); ignore_failure(write(socket, data, sizeof(data))); }
 #define die(text) { perror(text); return 1; }
 #define ignore_failure(call) if (call == -1) { /* does not matter */ }
-
-#define DEBUG
-
-#ifdef DEBUG
 #define debug_print(...) { printf(__VA_ARGS__); fflush(stdout); }
-#else
-#define debug_print(...)
-#endif
 
 struct WorkerInput {
     int client_socket;
@@ -124,22 +117,11 @@ bool check_for_dotdot(char* path) {
 #define check_ending_macro(ending_expr, mime_expr) { \
     smallstring(ending_array, #ending_expr); \
     if (check_ending(path, path_end, ending_array, ending_array + sizeof(ending_array) - 1)) { \
-        debug_print("%s recognized\n", #ending_expr); \
-        set_mime_type(mime_str); \
+        set_mime_type(mime_expr); \
         goto send_file; \
     } \
 }
 bool check_ending(char* path_beginning, char* path_end, const char* ending_beginning, const char* ending_end) {
-    debug_print("path_end = %s\n", path_end);
-    #ifdef DEBUG
-    debug_print("ending_beginning = ");
-    for (const char* ending_beginning2 = ending_beginning;;) {
-        debug_print("%c", *ending_beginning2);
-        if (ending_beginning2 == ending_end) break;
-        ++ending_beginning2;
-    }
-    debug_print("\n");
-    #endif
     for (;;) {
         if (*path_end != *ending_end) return false;
         if (ending_beginning == ending_end) return true;
@@ -201,7 +183,6 @@ void* worker_thread(void* input_void) {
     else {
         char* path_end = after_path - 1;
         struct MimeType mime;
-        debug_print("%s\n", path);
         check_ending_macro(.aac, audio/aac);
         check_ending_macro(.abw, application/x-abiword);
         check_ending_macro(.apng, image/apng);
@@ -281,7 +262,6 @@ void* worker_thread(void* input_void) {
         check_ending_macro(.7z, application/x-7z-compressed);
         set_mime_type(application/octet-stream);
         send_file:
-        debug_print("%lu\n", mime.length);
         send_file(result_descriptor, input->client_socket, statbuf.st_size, mime);
         close(result_descriptor);
     }
@@ -297,29 +277,7 @@ void handle_signal(int signal) {
     _exit(0);
 }
 
-#ifdef DEBUG
-#define test(expected, string) debug_print("%d %d - %s\n", expected, check_for_dotdot(string), string)
-void run_tests(void) {
-    return;
-    test(0, "");
-    test(0, ".");
-    test(1, "..");
-    test(0, "...");
-    test(0, ".../");
-    test(0, ".../.");
-    test(1, ".../..");
-    test(0, ".../..blah");
-    test(0, ".../blah..");
-    test(1, "../blah..");
-    test(0, "/blah..//");
-    test(1, "/blah..//..");
-}
-#endif
-
 int main(void) {
-    #ifdef DEBUG
-    run_tests();
-    #endif
     signal(SIGINT, handle_signal);
     signal(SIGTERM, handle_signal);
 
