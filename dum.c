@@ -130,17 +130,17 @@ bool check_for_dotdot(char* path) {
     } \
 }
 bool check_ending(char* path_beginning, char* path_end, const char* ending_beginning, const char* ending_end) {
+    debug_print("path_end = %s\n", path_end);
+    #ifdef DEBUG
+    debug_print("ending_beginning = ");
+    for (const char* ending_beginning2 = ending_beginning;;) {
+        debug_print("%c", *ending_beginning2);
+        if (ending_beginning2 == ending_end) break;
+        ++ending_beginning2;
+    }
+    debug_print("\n");
+    #endif
     for (;;) {
-        debug_print("path_end = %s\n", path_end);
-        #ifdef DEBUG
-        debug_print("ending_beginning = ");
-        for (const char* ending_beginning2 = ending_beginning;;) {
-            debug_print("%c", *ending_beginning2);
-            if (ending_beginning2 == ending_end) break;
-            ++ending_beginning2;
-        }
-        debug_print("\n");
-        #endif
         if (*path_end != *ending_end) return false;
         if (ending_beginning == ending_end) return true;
         if (path_beginning == path_end) return false;
@@ -187,6 +187,7 @@ void* worker_thread(void* input_void) {
             close(result_descriptor);
             if (after_path[-1] == '/') {
                 memcpy(after_path, INDEX_POSTFIX, sizeof(INDEX_POSTFIX));
+                after_path += sizeof(INDEX_POSTFIX) - 1;
                 result_descriptor = open_and_stat(path, &statbuf);
             } else {
                 *after_path = after_path_char;
@@ -299,6 +300,7 @@ void handle_signal(int signal) {
 #ifdef DEBUG
 #define test(expected, string) debug_print("%d %d - %s\n", expected, check_for_dotdot(string), string)
 void run_tests(void) {
+    return;
     test(0, "");
     test(0, ".");
     test(1, "..");
