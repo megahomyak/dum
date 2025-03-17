@@ -15,7 +15,7 @@
 const char* PORT = "8000";
 
 #define try(text, expr) if(expr != 0) die(text);
-#define smallstring(name, contents) const char name[sizeof(contents) / (sizeof(contents[0])) - 1] = contents
+#define smallstring(name, contents) const char name[sizeof(contents) / (sizeof(*contents)) - 1] = contents
 #define write_smallstring(socket, string_contents) { smallstring(data, string_contents); ignore_failure(write(socket, data, sizeof(data))); }
 #define die(text) { perror(text); return 1; }
 #define ignore_failure(call) if (call == -1) { /* does not matter */ }
@@ -169,7 +169,7 @@ void* worker_thread(void* input_void) {
             close(result_descriptor);
             if (after_path[-1] == '/') {
                 memcpy(after_path, INDEX_POSTFIX, sizeof(INDEX_POSTFIX));
-                after_path += sizeof(INDEX_POSTFIX) - 1;
+                after_path += sizeof(INDEX_POSTFIX)/sizeof(*INDEX_POSTFIX) - 1;
                 result_descriptor = open_and_stat(path, &statbuf);
             } else {
                 *after_path = after_path_char;
