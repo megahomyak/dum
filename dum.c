@@ -13,10 +13,11 @@
 #include <stdbool.h>
 #include <errno.h>
 
-#define try(text, expr) if(expr != 0) die(text);
+#define try_errno(text, expr) if(expr != 0) die_errno(text);
 #define smallstring(name, contents) static const char name[sizeof(contents) / (sizeof(*contents)) - 1] = contents
 #define write_smallstring(socket, string_contents) { smallstring(data, string_contents); ignore_failure(write(socket, data, sizeof(data))); }
-#define die(text) { perror(text); return 1; }
+#define die_errno(text) { perror(text); return 1; }
+#define die(text) { fprintf(stderr, "%s\n", text); return 1; }
 #define ignore_failure(call) if (call == -1) { /* does not matter */ }
 #define debug_print(format, ...) { printf(format "\n", __VA_ARGS__); fflush(stdout); }
 #define debug_print1(string) debug_print("%s", string)
@@ -29,6 +30,7 @@ void send_overloaded(int client_socket) {
     write_smallstring(client_socket,
         "HTTP/1.1 503 Service Unavailable\r\n"
         "Content-Type: text/plain; charset=UTF-8\r\n"
+        "Connection: close\r\n"
         "\r\n"
         "The service is overloaded. Please, try requesting again later"
     );
@@ -38,6 +40,7 @@ void send_not_found(int client_socket) {
     write_smallstring(client_socket,
         "HTTP/1.1 404 Not Found\r\n"
         "Content-Type: text/plain; charset=UTF-8\r\n"
+        "Connection: close\r\n"
         "\r\n"
         "404 Not Found"
     );
@@ -52,6 +55,7 @@ void send_file(int file_descriptor, int client_socket, size_t file_size, struct 
     write_smallstring(client_socket,
         "HTTP/1.1 200 OK\r\n"
         "Cache-Control: max-age=31536000, public\r\n"
+        "Connection: close\r\n"
         "Content-Type: "
     );
     ignore_failure(write(client_socket, mime.name, mime.length));
@@ -310,7 +314,8 @@ void handle_signal(int signal) {
     _exit(0);
 }
 
-int main(void) {
+int main(int argc, char *argv[]) {
+    if (argc != 2) die("There should only be one argument, and that should be the port the program will connect to");
     signal(SIGINT, handle_signal);
     signal(SIGTERM, handle_signal);
 
@@ -321,11 +326,11 @@ int main(void) {
     hints.ai_flags = AI_PASSIVE;
 
     pthread_attr_t thread_attributes;
-    try("pthread_attr_init", pthread_attr_init(&thread_attributes));
-    try("pthread_attr_setstacksize", pthread_attr_setstacksize(&thread_attributes, PTHREAD_STACK_MIN));
+    try_errno("pthread_attr_init", pthread_attr_init(&thread_attributes));
+    try_errno("pthread_attr_setstacksize", pthread_attr_setstacksize(&thread_attributes, PTHREAD_STACK_MIN));
 
     struct addrinfo* result;
-    try("getaddrinfo", getaddrinfo(/*name=*/NULL, PORT, &hints, &result));
+    try_errno("getaddrinfo", getaddrinfo(/*name=*/NULL, argv[1], &hints, &result));
 
     struct addrinfo* current = result;
     int server_socket;
@@ -334,24 +339,24 @@ int main(void) {
 
         if (server_socket != -1) {
             int yes = 1;
-            try("setsockopt reuseaddr", setsockopt(server_socket, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes)));
+            try_errno("setsockopt reuseaddr", setsockopt(server_socket, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes)));
             if (bind(server_socket, current->ai_addr, current->ai_addrlen) == -1) close(server_socket);
             else break;
         }
 
         current = current->ai_next;
-        if (current == NULL) die("no matching addresses");
+        if (current == NULL) die_errno("no matching addresses");
     }
     freeaddrinfo(result);
 
-    try("listen", listen(server_socket, SOMAXCONN));
+    try_errno("listen", listen(server_socket, SOMAXCONN));
 
     for (;;) {
         int client_socket = accept(server_socket, /*addr=*/NULL, /*addrlen=*/NULL);
         debug_print1("d");
         if (client_socket == -1) {
             if (errno == ECONNABORTED || errno == EMFILE || errno == ENFILE || errno == EINTR) continue;
-            else die("unexpected error on client_socket");
+            else die_errno("unexpected error on client_socket");
         }
 
         struct WorkerInput* input = malloc(sizeof(*input));
@@ -360,7 +365,7 @@ int main(void) {
         if (input != NULL && pthread_create(&thread, &thread_attributes, worker_thread, input) == 0) {
             debug_print1("e");
             input->client_socket = client_socket;
-            try("pthread_detach", pthread_detach(thread));
+            try_errno("pthread_detach", pthread_detach(thread));
         } else {
             debug_print1("f");
             send_overloaded(client_socket);
