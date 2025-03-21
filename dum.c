@@ -1,3 +1,4 @@
+#include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
 #include <netdb.h>
@@ -7,18 +8,66 @@
 #include <stdlib.h>
 #include <sys/sendfile.h>
 #include <sys/stat.h>
-#include <fcntl.h>
 #include <limits.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <errno.h>
 
+ssize_t recv_all(int socket, void* buf, size_t bufsize) {
+    ssize_t bytes_received_total = 0;
+    for (;;) {
+        size_t nbytes = bufsize - bytes_received_total;
+        if (nbytes == 0) break;
+        ssize_t bytes_received_current = recv(socket, buf + bytes_received_total, nbytes, MSG_DONTWAIT);
+        if (bytes_received_current == 0) break;
+        if (bytes_received_current < 0) {
+            if (errno == EINTR) continue;
+            if (errno == EAGAIN || errno == EWOULDBLOCK) break;
+            return -1;
+        }
+        bytes_received_total += bytes_received_current;
+    }
+    return bytes_received_total;
+}
+
+ssize_t send_all(int socket, const void* buf, size_t bufsize) {
+    ssize_t bytes_sent_total = 0;
+    for (;;) {
+        size_t nbytes = bufsize - bytes_sent_total;
+        if (nbytes == 0) break;
+        ssize_t bytes_sent_current = send(socket, buf + bytes_sent_total, nbytes, MSG_DONTWAIT);
+        if (bytes_sent_current == 0) return -1;
+        if (bytes_sent_current < 0) {
+            if (errno == EINTR) continue;
+            if (errno == EAGAIN || errno == EWOULDBLOCK) break;
+            return -1;
+        }
+        bytes_sent_total += bytes_sent_current;
+    }
+    return bytes_sent_total;
+}
+
+ssize_t send_full_file(int socket, int filefd, size_t file_size) {
+    off_t offset = 0;
+    for (;;) {
+        if (file_size - offset == 0) break;
+        ssize_t bytes_sent_current = sendfile(socket, filefd, &offset, file_size);
+        if (bytes_sent_current == 0) return -1;
+        if (bytes_sent_current < 0) {
+            if (errno == EINTR) continue;
+            if (errno == EAGAIN || errno == EWOULDBLOCK) break;
+            return -1;
+        }
+    }
+    return 0;
+}
+
 #define try_errno(text, expr) if(expr != 0) die_errno(text);
 #define smallstring(name, contents) static const char name[sizeof(contents) / (sizeof(*contents)) - 1] = contents
-#define write_smallstring(socket, string_contents) { smallstring(data, string_contents); ignore_failure(write(socket, data, sizeof(data))); }
+#define send_smallstring(socket, string_contents) { smallstring(data, string_contents); ignore_failure(send_all(socket, data, sizeof(data))); }
 #define die_errno(text) { perror(text); return 1; }
 #define die(text) { fprintf(stderr, "%s\n", text); return 1; }
-#define ignore_failure(call) if (call == -1) { /* does not matter */ }
+#define ignore_failure(call) if (call < 0) { /* does not matter */ }
 #define debug_print(format, ...) { printf(format "\n", __VA_ARGS__); fflush(stdout); }
 #define debug_print1(string) debug_print("%s", string)
 
@@ -26,8 +75,25 @@ struct WorkerInput {
     int client_socket;
 };
 
+#define send_generic_response(client_socket, status_code, message) { \
+    char content_length[256]; \
+    int content_length_size = snprintf(message, sizeof(message), "%zu", sizeof(message) - 1); \
+    send_smallstring(client_socket, \
+        "HTTP/1.1 " status_code "\r\n" \
+        "Content-Type: text/plain; charset=UTF-8\r\n" \
+        "Connection: close\r\n" \
+        "Content-Length: "); \
+    ignore_failure(send_all(client_socket, content_length, content_length_size)); \
+    send_smallstring(client_socket, \
+        "\r\n" \
+        "\r\n" \
+        message \
+    ); \
+}
+
 void send_overloaded(int client_socket) {
-    write_smallstring(client_socket,
+    send_generic_response(client_socket, "HTTP/1.1 503 Service Unavailable", "The service is overloaded. Please, try requesting again later");
+    send_smallstring(client_socket,
         "HTTP/1.1 503 Service Unavailable\r\n"
         "Content-Type: text/plain; charset=UTF-8\r\n"
         "Connection: close\r\n"
@@ -37,7 +103,7 @@ void send_overloaded(int client_socket) {
 }
 
 void send_not_found(int client_socket) {
-    write_smallstring(client_socket,
+    send_smallstring(client_socket,
         "HTTP/1.1 404 Not Found\r\n"
         "Content-Type: text/plain; charset=UTF-8\r\n"
         "Connection: close\r\n"
@@ -52,35 +118,36 @@ struct MimeType {
 };
 
 void send_file(int file_descriptor, int client_socket, size_t file_size, struct MimeType mime) {
-    write_smallstring(client_socket,
+    send_smallstring(client_socket,
         "HTTP/1.1 200 OK\r\n"
         "Cache-Control: max-age=31536000, public\r\n"
         "Connection: close\r\n"
         "Content-Type: "
     );
-    ignore_failure(write(client_socket, mime.name, mime.length));
-    write_smallstring(client_socket, "\r\n\r\n");
-    ignore_failure(sendfile(client_socket, file_descriptor, /*offset=*/NULL, file_size));
+    ignore_failure(send_all(client_socket, mime.name, mime.length));
+    send_smallstring(client_socket, "\r\nContent-Length: ");
+    send_smallstring(client_socket, "\r\n\r\n");
+    ignore_failure(send_full_file(client_socket, file_descriptor, file_size));
 }
 
-void write_full_directory(char* path, char* after_path, char* url_end, int client_socket) {
-    ignore_failure(write(client_socket, path, after_path - path));
-    write_smallstring(client_socket, "/");
-    ignore_failure(write(client_socket, after_path, url_end - after_path));
+void send_full_directory(char* path, char* after_path, char* url_end, int client_socket) {
+    ignore_failure(send_all(client_socket, path, after_path - path));
+    send_smallstring(client_socket, "/");
+    ignore_failure(send_all(client_socket, after_path, url_end - after_path));
 }
 
 void send_full_directory_redirect(char* path, char* after_path, char* url_end, int client_socket) {
-    write_smallstring(client_socket,
+    send_smallstring(client_socket,
         "HTTP/1.1 308 Permanent Redirect\r\n"
         "Content-Type: text/plain; charset=UTF-8\r\n"
         "Location: "
     );
-    write_full_directory(path, after_path, url_end, client_socket);
-    write_smallstring(client_socket,
+    send_full_directory(path, after_path, url_end, client_socket);
+    send_smallstring(client_socket,
         "\r\n\r\n"
         "Redirect to "
     );
-    write_full_directory(path, after_path, url_end, client_socket);
+    send_full_directory(path, after_path, url_end, client_socket);
 }
 
 int open_and_stat(char* path, struct stat* statbuf) {
@@ -147,29 +214,14 @@ bool check_ending(char* path_beginning, char* path_end, const char* ending_begin
 void* worker_thread(void* input_void) {
     debug_print1("g");
     struct WorkerInput* input = input_void;
-    fcntl(input->client_socket, F_SETFL, O_NONBLOCK);
 
     #define INDEX_POSTFIX "index.html"
     #define REQUEST_LINE_SIZE 512
     char request[REQUEST_LINE_SIZE + (sizeof(INDEX_POSTFIX) - 1) + sizeof('\0')];
-    int bytes_read_total = 0;
-    for (;;) {
-        int space_remaining = REQUEST_LINE_SIZE - bytes_read_total;
-        if (space_remaining == 0) break;
-        debug_print("%d %p %d", input->client_socket, request + bytes_read_total, space_remaining);
-        int bytes_read_current = read(input->client_socket, request + bytes_read_total, space_remaining);
-        if (bytes_read_current < 0) {
-            if (errno == EINTR) continue;
-            if (errno == EAGAIN || errno == EWOULDBLOCK) break;
-            else goto end;
-        }
-        if (bytes_read_current == 0) break;
-        bytes_read_total += bytes_read_current;
-    }
-    debug_print1("k");
+    ssize_t bytes_read_total = recv_all(input->client_socket, request, REQUEST_LINE_SIZE);
     if (bytes_read_total < 4) goto end; /* has at least 4 for "GET." */
     debug_print1("l");
-    debug_print("%d", bytes_read_total);
+    debug_print("%ld", bytes_read_total);
     debug_print1("a");
     request[bytes_read_total] = '\0';
 
@@ -353,7 +405,6 @@ int main(int argc, char *argv[]) {
 
     for (;;) {
         int client_socket = accept(server_socket, /*addr=*/NULL, /*addrlen=*/NULL);
-        debug_print1("d");
         if (client_socket == -1) {
             if (errno == ECONNABORTED || errno == EMFILE || errno == ENFILE || errno == EINTR) continue;
             else die_errno("unexpected error on client_socket");
@@ -363,11 +414,9 @@ int main(int argc, char *argv[]) {
 
         pthread_t thread;
         if (input != NULL && pthread_create(&thread, &thread_attributes, worker_thread, input) == 0) {
-            debug_print1("e");
             input->client_socket = client_socket;
             try_errno("pthread_detach", pthread_detach(thread));
         } else {
-            debug_print1("f");
             send_overloaded(client_socket);
             close(input->client_socket);
             free(input);
