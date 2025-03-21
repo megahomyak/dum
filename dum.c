@@ -11,15 +11,15 @@
 #include <limits.h>
 #include <signal.h>
 #include <stdbool.h>
-
-const char* PORT = "80";
+#include <errno.h>
 
 #define try(text, expr) if(expr != 0) die(text);
 #define smallstring(name, contents) static const char name[sizeof(contents) / (sizeof(*contents)) - 1] = contents
 #define write_smallstring(socket, string_contents) { smallstring(data, string_contents); ignore_failure(write(socket, data, sizeof(data))); }
 #define die(text) { perror(text); return 1; }
 #define ignore_failure(call) if (call == -1) { /* does not matter */ }
-#define debug_print(...) { printf(__VA_ARGS__); fflush(stdout); }
+#define debug_print(format, ...) { printf(format "\n", __VA_ARGS__); fflush(stdout); }
+#define debug_print1(string) debug_print("%s", string)
 
 struct WorkerInput {
     int client_socket;
@@ -141,21 +141,42 @@ bool check_ending(char* path_beginning, char* path_end, const char* ending_begin
 }
 
 void* worker_thread(void* input_void) {
+    debug_print1("g");
     struct WorkerInput* input = input_void;
+    fcntl(input->client_socket, F_SETFL, O_NONBLOCK);
 
     #define INDEX_POSTFIX "index.html"
     #define REQUEST_LINE_SIZE 512
     char request[REQUEST_LINE_SIZE + (sizeof(INDEX_POSTFIX) - 1) + sizeof('\0')];
-    int bytes_read = read(input->client_socket, request, REQUEST_LINE_SIZE);
-    if (bytes_read <= 4 /* not empty, not an error and has at least 4 for "GET." */) goto end;
-    request[bytes_read] = '\0';
+    int bytes_read_total = 0;
+    for (;;) {
+        int space_remaining = REQUEST_LINE_SIZE - bytes_read_total;
+        if (space_remaining == 0) break;
+        debug_print("%d %p %d", input->client_socket, request + bytes_read_total, space_remaining);
+        int bytes_read_current = read(input->client_socket, request + bytes_read_total, space_remaining);
+        if (bytes_read_current < 0) {
+            if (errno == EINTR) continue;
+            if (errno == EAGAIN || errno == EWOULDBLOCK) break;
+            else goto end;
+        }
+        if (bytes_read_current == 0) break;
+        bytes_read_total += bytes_read_current;
+    }
+    debug_print1("k");
+    if (bytes_read_total < 4) goto end; /* has at least 4 for "GET." */
+    debug_print1("l");
+    debug_print("%d", bytes_read_total);
+    debug_print1("a");
+    request[bytes_read_total] = '\0';
 
     char* path = &request[3];
     *path = '.';
 
     char* url_end = strchr(path, ' ');
     if (url_end == NULL) goto end;
+    debug_print1("b");
     *url_end = '\0';
+    debug_print1(url_end);
 
     char after_path_char = '\0';
     char* after_path = strchr(path, '?');
@@ -173,12 +194,14 @@ void* worker_thread(void* input_void) {
 
     struct stat statbuf;
     int result_descriptor = open_and_stat(path, &statbuf);
+    debug_print("1 %s", path);
     if (result_descriptor != -1) {
         if (S_ISDIR(statbuf.st_mode)) {
             close(result_descriptor);
             if (after_path[-1] == '/') {
                 memcpy(after_path, INDEX_POSTFIX, sizeof(INDEX_POSTFIX));
                 after_path += sizeof(INDEX_POSTFIX)/sizeof(*INDEX_POSTFIX) - 1;
+                debug_print("2 %s", path);
                 result_descriptor = open_and_stat(path, &statbuf);
             } else {
                 *after_path = after_path_char;
@@ -271,6 +294,7 @@ void* worker_thread(void* input_void) {
         check_ending_macro(".7z", "application/x-7z-compressed");
         set_mime_type("application/octet-stream");
         send_file:
+        debug_print1("c");
         send_file(result_descriptor, input->client_socket, statbuf.st_size, mime);
         close(result_descriptor);
     }
@@ -324,15 +348,21 @@ int main(void) {
 
     for (;;) {
         int client_socket = accept(server_socket, /*addr=*/NULL, /*addrlen=*/NULL);
-        if (client_socket == -1) continue;
+        debug_print1("d");
+        if (client_socket == -1) {
+            if (errno == ECONNABORTED || errno == EMFILE || errno == ENFILE || errno == EINTR) continue;
+            else die("unexpected error on client_socket");
+        }
 
         struct WorkerInput* input = malloc(sizeof(*input));
 
         pthread_t thread;
         if (input != NULL && pthread_create(&thread, &thread_attributes, worker_thread, input) == 0) {
+            debug_print1("e");
             input->client_socket = client_socket;
             try("pthread_detach", pthread_detach(thread));
         } else {
+            debug_print1("f");
             send_overloaded(client_socket);
             close(input->client_socket);
             free(input);
