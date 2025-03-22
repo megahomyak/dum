@@ -11,14 +11,11 @@
 #include <limits.h>
 #include <signal.h>
 #include <stdbool.h>
-
-ssize_t send_dontwait(int socket, const void* buf, size_t buflen) {
-    return send(socket, buf, buflen, MSG_DONTWAIT);
-}
+#include <fcntl.h>
 
 #define try(text, expr) if(expr != 0) die(text);
 #define smallstring(name, contents) static const char name[sizeof(contents) / (sizeof(*contents)) - 1] = contents
-#define send_smallstring(socket, string_contents) { smallstring(data, string_contents); ignore_failure(send_dontwait(socket, data, sizeof(data))); }
+#define write_smallstring(socket, string_contents) { smallstring(data, string_contents); ignore_failure(write(socket, data, sizeof(data))); }
 #define die(text) { perror(text); return 1; }
 #define ignore_failure(call) if (call == -1) { /* does not matter */ }
 #define debug_print(...) { printf(__VA_ARGS__); fflush(stdout); }
@@ -28,20 +25,20 @@ struct WorkerInput {
 };
 
 void send_overloaded(int client_socket) {
-    send_smallstring(client_socket,
+    write_smallstring(client_socket,
         "HTTP/1.1 503 Service Unavailable\r\n"
         "Content-Type: text/plain; charset=UTF-8\r\n"
         "\r\n"
-        "The service is overloaded. Please, try requesting again later"
+        "The service is overloaded. Please, try requesting again later\n"
     );
 }
 
 void send_not_found(int client_socket) {
-    send_smallstring(client_socket,
+    write_smallstring(client_socket,
         "HTTP/1.1 404 Not Found\r\n"
         "Content-Type: text/plain; charset=UTF-8\r\n"
         "\r\n"
-        "404 Not Found"
+        "File not found\n"
     );
 }
 
@@ -51,34 +48,35 @@ struct MimeType {
 };
 
 void send_file(int file_descriptor, int client_socket, size_t file_size, struct MimeType mime) {
-    send_smallstring(client_socket,
+    write_smallstring(client_socket,
         "HTTP/1.1 200 OK\r\n"
         "Cache-Control: max-age=31536000, public\r\n"
         "Content-Type: "
     );
-    ignore_failure(send_dontwait(client_socket, mime.name, mime.length));
-    send_smallstring(client_socket, "\r\n\r\n");
+    ignore_failure(write(client_socket, mime.name, mime.length));
+    write_smallstring(client_socket, "\r\n\r\n");
     ignore_failure(sendfile(client_socket, file_descriptor, /*offset=*/NULL, file_size));
 }
 
 void write_full_directory(char* path, char* after_path, char* url_end, int client_socket) {
     ignore_failure(write(client_socket, path, after_path - path));
-    send_smallstring(client_socket, "/");
+    write_smallstring(client_socket, "/");
     ignore_failure(write(client_socket, after_path, url_end - after_path));
 }
 
 void send_full_directory_redirect(char* path, char* after_path, char* url_end, int client_socket) {
-    send_smallstring(client_socket,
+    write_smallstring(client_socket,
         "HTTP/1.1 308 Permanent Redirect\r\n"
         "Content-Type: text/plain; charset=UTF-8\r\n"
         "Location: "
     );
     write_full_directory(path, after_path, url_end, client_socket);
-    send_smallstring(client_socket,
+    write_smallstring(client_socket,
         "\r\n\r\n"
         "Redirect to "
     );
     write_full_directory(path, after_path, url_end, client_socket);
+    write_smallstring(client_socket, "\n");
 }
 
 int open_and_stat(char* path, struct stat* statbuf) {
@@ -148,7 +146,7 @@ void* worker_thread(void* input_void) {
     #define INDEX_POSTFIX "index.html"
     #define REQUEST_LINE_SIZE 512
     char request[REQUEST_LINE_SIZE + (sizeof(INDEX_POSTFIX) - 1) + sizeof('\0')];
-    int bytes_read = recv(input->client_socket, request, REQUEST_LINE_SIZE, MSG_DONTWAIT);
+    int bytes_read = read(input->client_socket, request, REQUEST_LINE_SIZE);
     if (bytes_read <= 4 /* not empty, not an error and has at least 4 for "GET." */) goto end;
     request[bytes_read] = '\0';
 
@@ -338,6 +336,7 @@ int main(int argc, char* argv[]) {
 
         pthread_t thread;
         if (input != NULL) {
+            fcntl(client_socket, F_SETFL, O_NONBLOCK);
             input->client_socket = client_socket;
         }
         if (input != NULL && pthread_create(&thread, &thread_attributes, worker_thread, input) == 0) {
