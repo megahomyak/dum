@@ -21,17 +21,20 @@ ssize_t recv_all(int socket, void* buf, size_t bufsize) {
     for (;;) {
         size_t nbytes = bufsize - bytes_received_total;
         if (nbytes == 0) break;
-        ssize_t bytes_received_current = recv(socket, buf + bytes_received_total, nbytes, 0);
+        ssize_t bytes_received_current = recv(socket, buf + bytes_received_total, nbytes, MSG_DONTWAIT);
         debug_print("recv_all %zi %d %d", bytes_received_current, socket, errno);
         perror("recv_all_2");
+        debug_print("bytes_received_current = %zi", bytes_received_current);
         if (bytes_received_current == 0) break;
         if (bytes_received_current < 0) {
+            debug_print("... %d %d", errno, EINTR);
             if (errno == EINTR) continue;
             if (errno == EAGAIN || errno == EWOULDBLOCK) break;
             return -1;
         }
         bytes_received_total += bytes_received_current;
     }
+    debug_print("end of recv_all %zi", bytes_received_total);
     return bytes_received_total;
 }
 
@@ -91,7 +94,7 @@ struct WorkerInput {
 }
 
 #define send_content_type_text_plain(client_socket) { \
-    send_smallstring(client_socket, "Content-Type: text/plain; charset=UTF-8"); \
+    send_smallstring(client_socket, "Content-Type: text/plain; charset=UTF-8\r\n"); \
 }
 
 #define send_text(client_socket, status_code, message) { \
