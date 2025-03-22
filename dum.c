@@ -13,12 +13,17 @@
 #include <stdbool.h>
 #include <errno.h>
 
+#define debug_print(format, ...) { printf(format "\n", __VA_ARGS__); fflush(stdout); }
+#define debug_print1(string) debug_print("%s", string)
+
 ssize_t recv_all(int socket, void* buf, size_t bufsize) {
     ssize_t bytes_received_total = 0;
     for (;;) {
         size_t nbytes = bufsize - bytes_received_total;
         if (nbytes == 0) break;
-        ssize_t bytes_received_current = recv(socket, buf + bytes_received_total, nbytes, MSG_DONTWAIT);
+        ssize_t bytes_received_current = recv(socket, buf + bytes_received_total, nbytes, 0);
+        debug_print("recv_all %zi %d %d", bytes_received_current, socket, errno);
+        perror("recv_all_2");
         if (bytes_received_current == 0) break;
         if (bytes_received_current < 0) {
             if (errno == EINTR) continue;
@@ -68,22 +73,30 @@ ssize_t send_full_file(int socket, int filefd, size_t file_size) {
 #define die_errno(text) { perror(text); return 1; }
 #define die(text) { fprintf(stderr, "%s\n", text); return 1; }
 #define ignore_failure(call) if (call < 0) { /* does not matter */ }
-#define debug_print(format, ...) { printf(format "\n", __VA_ARGS__); fflush(stdout); }
-#define debug_print1(string) debug_print("%s", string)
 
 struct WorkerInput {
     int client_socket;
 };
 
-#define send_generic_response(client_socket, status_code, message) { \
-    char content_length[256]; \
-    int content_length_size = snprintf(message, sizeof(message), "%zu", sizeof(message) - 1); \
+#define send_generic_headers(client_socket, status_code, content_length) { \
+    char content_length_buffer[256]; \
+    int content_length_buffer_size = snprintf(content_length_buffer, sizeof(content_length_buffer) - 2, "%zu", content_length); \
     send_smallstring(client_socket, \
         "HTTP/1.1 " status_code "\r\n" \
-        "Content-Type: text/plain; charset=UTF-8\r\n" \
         "Connection: close\r\n" \
         "Content-Length: "); \
-    ignore_failure(send_all(client_socket, content_length, content_length_size)); \
+    content_length_buffer[content_length_buffer_size++] = '\r'; \
+    content_length_buffer[content_length_buffer_size++] = '\n'; \
+    ignore_failure(send_all(client_socket, content_length_buffer, content_length_buffer_size)); \
+}
+
+#define send_content_type_text_plain(client_socket) { \
+    send_smallstring(client_socket, "Content-Type: text/plain; charset=UTF-8"); \
+}
+
+#define send_text(client_socket, status_code, message) { \
+    send_generic_headers(client_socket, status_code, sizeof(message) - 1); \
+    send_content_type_text_plain(client_socket); \
     send_smallstring(client_socket, \
         "\r\n" \
         "\r\n" \
@@ -92,24 +105,11 @@ struct WorkerInput {
 }
 
 void send_overloaded(int client_socket) {
-    send_generic_response(client_socket, "HTTP/1.1 503 Service Unavailable", "The service is overloaded. Please, try requesting again later");
-    send_smallstring(client_socket,
-        "HTTP/1.1 503 Service Unavailable\r\n"
-        "Content-Type: text/plain; charset=UTF-8\r\n"
-        "Connection: close\r\n"
-        "\r\n"
-        "The service is overloaded. Please, try requesting again later"
-    );
+    send_text(client_socket, "503 Service Unavailable", "The service is overloaded. Please, try requesting again later");
 }
 
 void send_not_found(int client_socket) {
-    send_smallstring(client_socket,
-        "HTTP/1.1 404 Not Found\r\n"
-        "Content-Type: text/plain; charset=UTF-8\r\n"
-        "Connection: close\r\n"
-        "\r\n"
-        "404 Not Found"
-    );
+    send_text(client_socket, "404 Not Found", "File not found");
 }
 
 struct MimeType {
@@ -118,14 +118,9 @@ struct MimeType {
 };
 
 void send_file(int file_descriptor, int client_socket, size_t file_size, struct MimeType mime) {
-    send_smallstring(client_socket,
-        "HTTP/1.1 200 OK\r\n"
-        "Cache-Control: max-age=31536000, public\r\n"
-        "Connection: close\r\n"
-        "Content-Type: "
-    );
+    send_generic_headers(client_socket, "200 OK", file_size);
+    send_smallstring(client_socket, "Content-Type: ");
     ignore_failure(send_all(client_socket, mime.name, mime.length));
-    send_smallstring(client_socket, "\r\nContent-Length: ");
     send_smallstring(client_socket, "\r\n\r\n");
     ignore_failure(send_full_file(client_socket, file_descriptor, file_size));
 }
@@ -137,11 +132,9 @@ void send_full_directory(char* path, char* after_path, char* url_end, int client
 }
 
 void send_full_directory_redirect(char* path, char* after_path, char* url_end, int client_socket) {
-    send_smallstring(client_socket,
-        "HTTP/1.1 308 Permanent Redirect\r\n"
-        "Content-Type: text/plain; charset=UTF-8\r\n"
-        "Location: "
-    );
+    send_generic_headers(client_socket, "308 Permanent Redirect", sizeof("Redirect to ") + url_end - path + 1);
+    send_content_type_text_plain(client_socket);
+    send_smallstring(client_socket, "Location: ");
     send_full_directory(path, after_path, url_end, client_socket);
     send_smallstring(client_socket,
         "\r\n\r\n"
@@ -352,12 +345,14 @@ void* worker_thread(void* input_void) {
         send_file:
         debug_print1("c");
         send_file(result_descriptor, input->client_socket, statbuf.st_size, mime);
+        debug_print1("aftersend");
         close(result_descriptor);
     }
 
     end:
     close(input->client_socket);
     free(input);
+    debug_print1("almostend");
     return NULL;
 }
 
@@ -413,8 +408,10 @@ int main(int argc, char *argv[]) {
         struct WorkerInput* input = malloc(sizeof(*input));
 
         pthread_t thread;
-        if (input != NULL && pthread_create(&thread, &thread_attributes, worker_thread, input) == 0) {
+        if (input != NULL) {
             input->client_socket = client_socket;
+        }
+        if (input != NULL && pthread_create(&thread, &thread_attributes, worker_thread, input) == 0) {
             try_errno("pthread_detach", pthread_detach(thread));
         } else {
             send_overloaded(client_socket);
